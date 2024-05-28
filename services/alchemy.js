@@ -1,6 +1,6 @@
 const { Alchemy, AlchemySubscription } = require("alchemy-sdk");
 const alchemyConfigs = require('../config/alchemyConfig');
-const { depositTokens } = require("../controllers/userController");
+const { depositTokens, withdrawTokens } = require("../controllers/userController");
 
 const createAlchemyInstances = (networks) => {
   const instances = {};
