@@ -16,7 +16,7 @@ services:
     volumes:
       - ./:/app
       - /app/node_modules
-      - /home/l1kz003/app/.env.development:/app/.env.development
+      - /home/interpunct/app/.env.development:/app/.env.development
     env_file:
       - .env.development
     command: node index.js
