@@ -1,0 +1,22 @@
+version: "3"
+services:
+  node-app:
+    build:
+      context: .
+      args:
+        NODE_ENV: development
+    image: naffles-fund-management/node-app:development
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      update_config:
+        parallelism: 1
+        delay: 15s
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /home/l1kz003/app/.env.development:/app/.env.development
+    env_file:
+      - .env.development
+    command: node index.js
