@@ -1,0 +1,64 @@
+const mongoose = require("mongoose");
+const Schema = mongoose.Schema;
+
+const depositSchema = new Schema({
+  userRef: {
+    type: Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+    index: true,
+  },
+  trackingNumber: {
+    type: Number,
+    required: true
+  },
+  fromAddress: {
+    type: String,
+    required: true,
+    index: true,
+  },
+  amount: {
+    type: String,
+    default: "0",
+  },
+  transactionHash: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true,
+  },
+  coinType: {
+    type: String,
+    enum: ["eth", "sol"],
+    required: true,
+  },
+  chainId: {
+    type: String,
+    required: true,
+  },
+  transactionDetails: {
+    type: Schema.Types.Mixed,
+    required: true,
+    select: false,  // Default hide this field
+  },
+}, { timestamps: true });
+
+depositSchema.pre("validate", async function (next) {
+  if (this.isNew) {
+    // Check if this is a new document
+    const lastDeposit = await this.constructor.findOne({ userRef: this.userRef })
+      .sort({ trackingNumber: -1 });
+
+    if (lastDeposit && lastDeposit.trackingNumber !== undefined) {
+      // If last deposit has a trackingNumber, increment it
+      this.trackingNumber = lastDeposit.trackingNumber + 1;
+    } else {
+      // If no deposit or no trackingNumber, calculate the tracking number
+      const depositCount = await this.constructor.countDocuments({ userRef: this.userRef });
+      this.trackingNumber = depositCount + 1;
+    }
+  }
+  next();
+});
+
+module.exports = mongoose.model("Deposit", depositSchema);
