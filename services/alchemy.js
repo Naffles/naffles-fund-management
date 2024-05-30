@@ -31,12 +31,13 @@ const subscribeToMinedTransactions = (alchemyInstance, addresses) => {
       },
       async (tx) => {
         tx = tx.transaction;
+        console.log("transaction : ", tx);
         // Invalidate if the to and from of the user is the same.
-        if (tx.to.toLowerCase() === tx.from.toLowerCase()) {
+        if (tx.to === tx.from) {
           console.log("Transaction sent to itself");
           return;
         }
-        const action = (tx.to.toLowerCase() === address.toLowerCase()) ? 'deposit' : 'withdraw';
+        const action = (tx.to === address) ? 'deposit' : 'withdraw';
         const cointType = 'eth'
         const txHash = (tx.hash);
         const chainId = tx.chainId
