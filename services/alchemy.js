@@ -46,7 +46,7 @@ const subscribeToMinedTransactions = (alchemyInstance, addresses) => {
           if (action == 'deposit') {
             await depositTokens(
               cointType,
-              ethers.utils.getAddress(tx.from),
+              ethers.getAddress(tx.from),
               BigInt(tx.value),
               txHash,
               chainId
@@ -54,7 +54,7 @@ const subscribeToMinedTransactions = (alchemyInstance, addresses) => {
           } else { // 'withdraw
             await withdrawTokens(
               cointType,
-              ethers.utils.getAddress(tx.to),
+              ethers.getAddress(tx.to),
               BigInt(tx.value),
               txHash,
               'eth'
