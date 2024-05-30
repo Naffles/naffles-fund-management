@@ -38,13 +38,13 @@ const subscribeToMinedTransactions = (alchemyInstance, addresses) => {
         }
         const action = (tx.to.toLowerCase() === address.toLowerCase()) ? 'deposit' : 'withdraw';
         const cointType = 'eth'
-        const txHash = (tx.hash).toLowerCase();
+        const txHash = (tx.hash);
         const chainId = tx.chainId
         try {
           if (action == 'deposit') {
             await depositTokens(
               cointType,
-              tx.from.toLowerCase(),
+              tx.from,
               BigInt(tx.value),
               txHash,
               chainId
@@ -52,7 +52,7 @@ const subscribeToMinedTransactions = (alchemyInstance, addresses) => {
           } else { // 'withdraw
             await withdrawTokens(
               cointType,
-              tx.to.toLowerCase(),
+              tx.to,
               BigInt(tx.value),
               txHash,
               chainId

@@ -28,7 +28,7 @@ const processTransaction = async (transaction, monitoredAddress, network) => {
           const txHash = transaction.transaction.signatures[0];
           await withdrawTokens(
             cointType,
-            recipient.toLowerCase(),
+            recipient,
             BigInt(amount.toString()),
             txHash,
             network
@@ -43,7 +43,7 @@ const processTransaction = async (transaction, monitoredAddress, network) => {
           const cointType = 'sol';
           await depositTokens(
             cointType,
-            sender.toLowerCase(),
+            sender,
             BigInt(amount.toString()),
             txHash,
             network
