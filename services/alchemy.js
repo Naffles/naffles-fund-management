@@ -54,7 +54,7 @@ const subscribeToMinedTransactions = (alchemyInstance, addresses) => {
           } else { // 'withdraw
             await withdrawTokens(
               cointType,
-              web3.utils.toChecksumAddress(tx.to),
+              ethers.utils.getAddress(tx.to),
               BigInt(tx.value),
               txHash,
               'eth'
