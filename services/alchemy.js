@@ -55,7 +55,7 @@ const subscribeToMinedTransactions = (alchemyInstance, addresses) => {
               tx.to,
               BigInt(tx.value),
               txHash,
-              chainId
+              'eth'
             );
           }
         } catch (error) {

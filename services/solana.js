@@ -31,7 +31,7 @@ const processTransaction = async (transaction, monitoredAddress, network) => {
             recipient,
             BigInt(amount.toString()),
             txHash,
-            network
+            'sol'
           );
           console.log(`Withdrawal: ${transaction.transaction.signatures[0]}, Amount: ${amount} SOL`);
         } else if (recipient === monitoredAddressStr) {
