@@ -13,9 +13,9 @@
   "dependencies": {
     "@solana/web3.js": "^1.91.8",
     "alchemy-sdk": "^3.3.1",
+    "ethers": "^6.12.1",
     "ioredis": "^5.4.1",
     "mongoose": "^8.4.0",
-    "nodemon": "^3.1.1",
-    "web3": "^4.9.0"
+    "nodemon": "^3.1.1"
   }
 }

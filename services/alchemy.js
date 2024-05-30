@@ -1,8 +1,7 @@
 const { Alchemy, AlchemySubscription } = require("alchemy-sdk");
 const alchemyConfigs = require('../config/alchemyConfig');
 const { depositTokens, withdrawTokens } = require("../controllers/userController");
-const Web3 = require('web3');
-const web3 = new Web3();
+const { ethers } = require('ethers');
 
 const createAlchemyInstances = (networks) => {
   const instances = {};
@@ -47,7 +46,7 @@ const subscribeToMinedTransactions = (alchemyInstance, addresses) => {
           if (action == 'deposit') {
             await depositTokens(
               cointType,
-              web3.utils.toChecksumAddress(tx.from),
+              ethers.utils.getAddress(tx.from),
               BigInt(tx.value),
               txHash,
               chainId
