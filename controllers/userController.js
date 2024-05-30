@@ -8,7 +8,6 @@ const createWalletBalance = require("../utils/createWalletBalance");
 
 exports.depositTokens = async (coinType, address, amount, txHash, network) => {
   try {
-    // find user connected to the wallet
     const wallet = await WalletAddress.findOne({ address: address });
     if (!wallet) {
       console.log("No user account detected: ", address);

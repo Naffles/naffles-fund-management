@@ -1,6 +1,8 @@
 const { Alchemy, AlchemySubscription } = require("alchemy-sdk");
 const alchemyConfigs = require('../config/alchemyConfig');
 const { depositTokens, withdrawTokens } = require("../controllers/userController");
+const Web3 = require('web3');
+const web3 = new Web3();
 
 const createAlchemyInstances = (networks) => {
   const instances = {};
@@ -40,12 +42,12 @@ const subscribeToMinedTransactions = (alchemyInstance, addresses) => {
         const action = (tx.to === address) ? 'deposit' : 'withdraw';
         const cointType = 'eth'
         const txHash = (tx.hash);
-        const chainId = tx.chainId
+        const chainId = tx.chainId;
         try {
           if (action == 'deposit') {
             await depositTokens(
               cointType,
-              tx.from,
+              web3.utils.toChecksumAddress(tx.from),
               BigInt(tx.value),
               txHash,
               chainId
@@ -53,7 +55,7 @@ const subscribeToMinedTransactions = (alchemyInstance, addresses) => {
           } else { // 'withdraw
             await withdrawTokens(
               cointType,
-              tx.to,
+              web3.utils.toChecksumAddress(tx.to),
               BigInt(tx.value),
               txHash,
               'eth'
