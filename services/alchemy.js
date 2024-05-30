@@ -32,7 +32,6 @@ const subscribeToMinedTransactions = (alchemyInstance, addresses) => {
       },
       async (tx) => {
         tx = tx.transaction;
-        console.log("transaction : ", tx);
         // Invalidate if the to and from of the user is the same.
         if (tx.to.toLowerCase() === tx.from.toLowerCase()) {
           console.log("Transaction sent to itself");

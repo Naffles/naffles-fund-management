@@ -16,8 +16,6 @@ exports.depositTokens = async (coinType, address, amount, txHash, network) => {
     // create wallet balance if not existing
     await createWalletBalance(wallet.userRef);
     // save deposit data
-    console.log("transaction hash: ", txHash, typeof txHash);
-
     const newDepositTransaction = new Deposit({
       userRef: wallet.userRef,
       fromAddress: address,
@@ -100,7 +98,6 @@ exports.withdrawTokens = async (coinType, address, amount, txHash, network) => {
     // create wallet balance if not existing
     await createWalletBalance(wallet.userRef);
     // save deposit data
-    console.log("transaction details: ", coinType, address, amount, txHash, network)
     // search for withdraw document
     // update the status to approved
     const withdrawDocument = await Withdraw.findOneAndUpdate({
