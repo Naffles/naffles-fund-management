@@ -1,0 +1,22 @@
+version: "3"
+services:
+  node-app:
+    build:
+      context: .
+      args:
+        NODE_ENV: staging
+    image: naffles-fund-management/node-app:staging
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      update_config:
+        parallelism: 1
+        delay: 15s
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /home/interpunct/app/.env.staging:/app/.env.staging
+    env_file:
+      - .env.staging
+    command: node index.js
