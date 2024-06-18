@@ -16,7 +16,7 @@ services:
     volumes:
       - ./:/app
       - /app/node_modules
-      - /home/interpunct/app/.env.production:/app/.env.production
+      - ./.env.production:/app/.env.production
     env_file:
       - .env.production
     command: node index.js
