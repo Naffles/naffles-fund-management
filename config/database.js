@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const { initializeTreasury } = require("../models/analytics/treasury");
+const runMigrations = require("../resources/scripts/runMigrations");
 
 const connectWithRetry = () => {
   console.log("Attempting to connect to MongoDB...");
@@ -12,6 +13,18 @@ const connectWithRetry = () => {
     })
     .then(async () => {
       await initializeTreasury();
+      runMigrations()
+        .then((result) => {
+          console.log('Migrations completed successfully');
+          console.log('stdout:', result.stdout);
+          console.log('stderr:', result.stderr);
+        })
+        .catch((error) => {
+          console.error('Migrations failed');
+          console.error('Exit code:', error.code);
+          console.error('stdout:', error.stdout);
+          console.error('stderr:', error.stderr);
+        });
       console.log("Successfully connected to DB");
     })
     .catch((e) => {

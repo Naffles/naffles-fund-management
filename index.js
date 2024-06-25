@@ -1,6 +1,6 @@
-const { EVM_NETWORKS, SOLANA_NETWORKS, EVM_SERVER_ADDRESS, SOLANA_SERVER_ADDRESS } = require('./config/config');
+const { EVM_NETWORKS, SOLANA_NETWORKS, EVM_SERVER_ADDRESS, SOLANA_SERVER_ADDRESS, SPL_SUPPORTED_TOKENS } = require('./config/config');
 const { createAlchemyInstances, subscribeToMinedTransactions } = require('./services/alchemy');
-const { createSolanaInstances, subscribeToTransactions } = require('./services/solana');
+const { createSolanaInstances, subscribeToTransactions, findAssociatedTokenAddress } = require('./services/solana');
 const connectWithRetry = require("./config/database");
 
 try {
@@ -15,21 +15,26 @@ try {
   const alchemyInstances = createAlchemyInstances(evmNetworks);
   const solanaInstances = createSolanaInstances(solanaNetworks);
 
-  Object.keys(alchemyInstances).forEach(network => {
-    const alchemyInstance = alchemyInstances[network];
-    console.log(`Subscribing to ${network}`);
-    try {
-      subscribeToMinedTransactions(alchemyInstance, evmServerAddress);
-    } catch (error) {
-      console.error(`Error subscribing to ${network} mined transactions`, error.message);
-    }
-  });
+  // Object.keys(alchemyInstances).forEach(network => {
+  //   const alchemyInstance = alchemyInstances[network];
+  //   console.log(`Subscribing to ${network}`);
+  //   try {
+  //     subscribeToMinedTransactions(alchemyInstance, evmServerAddress);
+  //   } catch (error) {
+  //     console.error(`Error subscribing to ${network} mined transactions`, error.message);
+  //   }
+  // });
 
   Object.keys(solanaInstances).forEach(async (network) => {
     const solanaInstance = solanaInstances[network];
     console.log(`Subscribing to ${network}`);
     try {
-      subscribeToTransactions(solanaInstance, solanaServerAddress, network);
+      subscribeToTransactions(solanaInstance, solanaServerAddress, network, false, 'sol');
+      SPL_SUPPORTED_TOKENS.forEach(async (token) => {
+        const { address, symbol, decimal } = token;
+        const serverAddress = await findAssociatedTokenAddress(solanaServerAddress, address);
+        await subscribeToTransactions(solanaInstance, serverAddress, network, true, symbol);
+      });
     } catch (error) {
       console.error(`Error subscribing to ${network} mined transactions`, error.message);
     }

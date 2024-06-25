@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const Schema = mongoose.Schema;
+const { Schema } = mongoose;
 
 const userDepositAndWithdrawHistorySchema = new Schema({
   userRef: {
@@ -13,24 +13,14 @@ const userDepositAndWithdrawHistorySchema = new Schema({
     type: Schema.Types.ObjectId,
   },
   totalDepositedAmount: {
-    eth: {
-      type: String,
-      default: "0",
-    },
-    sol: {
-      type: String,
-      default: "0",
-    },
+    type: Map,
+    of: String,
+    default: {},
   },
   totalWithdrawnAmount: {
-    eth: {
-      type: String,
-      default: "0",
-    },
-    sol: {
-      type: String,
-      default: "0",
-    },
+    type: Map,
+    of: String,
+    default: {},
   },
 }, { timestamps: true });
 

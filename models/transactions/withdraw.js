@@ -29,16 +29,11 @@ const withdrawSchema = new Schema({
   },
   coinType: {
     type: String,
-    enum: ["eth", "sol"],
     required: true,
   },
   chainId: {
     type: String,
     index: true
-  },
-  transactionDetails: {
-    type: Schema.Types.Mixed,
-    select: false,  // Default hide this field
   },
   status: {
     type: String,

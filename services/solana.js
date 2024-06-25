@@ -1,58 +1,7 @@
-const { Connection, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
+const { Connection, PublicKey } = require('@solana/web3.js');
 const solanaConfigs = require('../config/solanaConfig');
 const { depositTokens, withdrawTokens } = require('../controllers/userController');
-
-const processTransaction = async (transaction, monitoredAddress, network) => {
-  if (!transaction) return;
-
-  const message = transaction.transaction.message;
-  const monitoredAddressStr = monitoredAddress.toBase58();
-
-  message.instructions.forEach(async (instruction, instructionIndex) => {
-    const programId = message.accountKeys[instruction.programIdIndex].toBase58();
-    // Check if the program ID is the native SOL program ID
-    if (programId === '11111111111111111111111111111111') {
-      const keys = instruction.accounts.map(index => message.accountKeys[index].toBase58());
-      if (keys.includes(monitoredAddressStr)) {
-        const monitoredIndex = keys.indexOf(monitoredAddressStr);
-        const otherIndex = monitoredIndex === 0 ? 1 : 0; // Assuming the other address is the first other one
-
-        const sender = keys[0];  // Typically, the sender is the first key
-        const recipient = keys[1];  // Typically, the recipient is the second key
-        var amount;
-        if (sender === monitoredAddressStr) {
-          const preBalance = transaction.meta.preBalances[otherIndex];
-          const postBalance = transaction.meta.postBalances[otherIndex];
-          amount = Math.abs((preBalance - postBalance));
-          const cointType = 'sol'
-          const txHash = transaction.transaction.signatures[0];
-          await withdrawTokens(
-            cointType,
-            recipient,
-            BigInt(amount.toString()),
-            txHash,
-            'sol'
-          );
-          console.log(`Withdrawal: ${transaction.transaction.signatures[0]}, Amount: ${amount} SOL`);
-        } else if (recipient === monitoredAddressStr) {
-          const preBalance = transaction.meta.preBalances[monitoredIndex];
-          const postBalance = transaction.meta.postBalances[monitoredIndex];
-          amount = Math.abs((preBalance - postBalance)); // / LAMPORTS_PER_SOL);
-          console.log(`Deposit: ${transaction.transaction.signatures[0]}, Amount: ${amount} SOL`);
-          const txHash = transaction.transaction.signatures[0];
-          const cointType = 'sol';
-          await depositTokens(
-            cointType,
-            sender,
-            BigInt(amount.toString()),
-            txHash,
-            network
-          );
-        }
-      }
-    }
-  });
-};
+const { getAssociatedTokenAddress, ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, AccountLayout } = require('@solana/spl-token');
 
 const createSolanaInstances = (networks) => {
   const instances = {};
@@ -69,37 +18,127 @@ const createSolanaInstances = (networks) => {
   return instances;
 };
 
-const subscribeToTransactions = (connection, address, network) => {
-  const publicKey = new PublicKey(address);
-  console.log(`Subscribing to transactions for publicKey: ${publicKey.toBase58()}`);
+const absBigInt = (value) => {
+  return value < 0n ? -value : value;
+};
 
+const calculateAmount = (preBalance, postBalance) => {
+  return absBigInt(BigInt(preBalance) - BigInt(postBalance))
+};
+
+const handleTransaction = async (connection, transaction, monitoredAddress, symbol) => {
+  const message = transaction.transaction.message;
+  const monitoredAddressStr = monitoredAddress.toBase58();
+  const txHash = transaction.transaction.signatures[0];
+  const isSol = 'sol' === symbol ? true : false;
+  message.instructions.forEach(async (instruction) => {
+    const keys = instruction.accounts.map(index => message.accountKeys[index].toBase58());
+    if (keys.includes(monitoredAddressStr)) {
+      // for sol computation indexes
+      const monitoredIndex = keys.indexOf(monitoredAddressStr);
+      const otherIndex = monitoredIndex === 0 ? 1 : 0;
+
+      const senderIndex = isSol ? 0 : 3;
+      const recipientIndex = isSol ? 1 : 2;
+      const sender = keys[senderIndex];
+      const recipient = keys[recipientIndex];
+      const decodedRecipient = isSol ? recipient : await getOwnerOfTokenAccount(connection, recipient);
+
+      // console.log("sender: ", sender)
+      // console.log("recipient: ", recipient, decodedRecipient)
+      // console.log("monitoredAddress: ", monitoredAddressStr);
+      // console.log("keys: ", keys);
+
+      if (sender === monitoredAddressStr || (!isSol && sender == await getOwnerOfTokenAccount(connection, monitoredAddressStr))) {
+        const preBalance = isSol ? transaction.meta.preBalances[otherIndex] : transaction.meta.preTokenBalances.find(b => b.owner === decodedRecipient)?.uiTokenAmount.amount;
+        const postBalance = isSol ? transaction.meta.postBalances[otherIndex] : transaction.meta.postTokenBalances.find(b => b.owner === decodedRecipient)?.uiTokenAmount.amount;
+        if (!postBalance && !preBalance) {
+          console.log("withdraw post and pre balances equals to null");
+          return;
+        }
+        const amount = calculateAmount(preBalance, postBalance);
+        console.log("withdraw data: ", symbol, decodedRecipient, amount, txHash, 'sol')
+        await withdrawTokens(symbol, decodedRecipient, amount, txHash, 'sol');
+      }
+      else if (recipient === monitoredAddressStr) {
+        const preBalance = isSol ? transaction.meta.preBalances[monitoredIndex] : transaction.meta.preTokenBalances.find(b => b.owner === decodedRecipient)?.uiTokenAmount.amount;
+        const postBalance = isSol ? transaction.meta.postBalances[monitoredIndex] : transaction.meta.postTokenBalances.find(b => b.owner === decodedRecipient)?.uiTokenAmount.amount;
+        if (!postBalance && !preBalance) {
+          console.log("deposit post and pre balances equals to null");
+          return;
+        }
+        const amount = calculateAmount(preBalance, postBalance);
+        console.log("deposit data: ", symbol, sender, amount, txHash, 'sol')
+        await depositTokens(symbol, sender, amount, txHash, 'sol');
+      }
+    }
+  });
+};
+
+const processTransaction = async (connection, transaction, monitoredAddress, network, symbol, subscriptionId) => {
+  if (!transaction) return;
+
+  const message = transaction.transaction.message;
+  const programIds = message.instructions.map(instruction => message.accountKeys[instruction.programIdIndex].toBase58());
+  const isSolTransaction = programIds.includes('11111111111111111111111111111111');
+  const isSplTransaction = programIds.includes(TOKEN_PROGRAM_ID.toBase58());
+
+  if (isSolTransaction) {
+    await handleTransaction(connection, transaction, monitoredAddress, symbol);
+  }
+  if (isSplTransaction && subscriptionId != 0) {
+    await handleTransaction(connection, transaction, monitoredAddress, symbol);
+  }
+};
+
+const subscribeToTransactions = (
+  connection,
+  address,
+  network,
+  spl = false,
+  symbol,
+) => {
+  const publicKey = spl ? address : new PublicKey(address);
+  console.log(`Subscribing to transactions for publicKey: ${publicKey.toBase58()}`);
   const subscriptionId = connection.onLogs(publicKey, async (log) => {
     if (log.err === null) {
       const transaction = await connection.getTransaction(log.signature, { commitment: 'confirmed' });
-      processTransaction(transaction, publicKey, network);
+      processTransaction(connection, transaction, publicKey, network, symbol, subscriptionId);
     }
   }, 'confirmed');
+  // console.log("subscription id : ", subscriptionId);
   return subscriptionId;
 };
 
+const findAssociatedTokenAddress = async (walletAddress, tokenMintAddress) => {
+  const associatedTokenAddress = await getAssociatedTokenAddress(
+    new PublicKey(tokenMintAddress),
+    new PublicKey(walletAddress),
+    false, // allowOwnerOffCurve (set to false in most cases)
+    TOKEN_PROGRAM_ID,
+    ASSOCIATED_TOKEN_PROGRAM_ID
+  );
+  return associatedTokenAddress;
+};
 
-const subscribeToBalanceChanges = (connection, address, callback) => {
-  const publicKey = new PublicKey(address);
-  console.log(`Subscribing to balance changes for publicKey: ${publicKey.toBase58()}`);
-
-  const subscriptionId = connection.onAccountChange(publicKey, (accountInfo) => {
-    if (accountInfo.lamports !== undefined) {
-      callback(accountInfo.lamports / 1e9); // Convert lamports to SOL
+const getOwnerOfTokenAccount = async (connection, tokenAccountAddress) => {
+  try {
+    const accountInfo = await connection.getAccountInfo(new PublicKey(tokenAccountAddress));
+    if (!accountInfo) {
+      throw new Error(`Account ${tokenAccountAddress} not found`);
     }
-  }, 'confirmed'); // Use 'confirmed' commitment
-
-  console.log(`Subscription ID: ${subscriptionId}`);
-  return subscriptionId;
+    const tokenAccountData = AccountLayout.decode(accountInfo.data);
+    const ownerAddress = new PublicKey(tokenAccountData.owner).toBase58();
+    return ownerAddress;
+  } catch (error) {
+    console.error('Error fetching or decoding account information:', error);
+    throw error;
+  }
 };
 
 module.exports = {
   createSolanaInstances,
-  subscribeToBalanceChanges,
   subscribeToTransactions,
-  processTransaction
+  processTransaction,
+  findAssociatedTokenAddress
 };

@@ -9,26 +9,15 @@ const walletBalanceSchema = new Schema({
     index: true,
   },
   balances: {
-    eth: {
-      type: String,
-      default: "0",
-    },
-    sol: {
-      type: String,
-      default: "0",
-    },
+    type: Map,
+    of: String,
+    default: {},
   },
-  fundingBalances: { // balance that waiting to withdraw
-    eth: {
-      type: String,
-      default: "0",
-    },
-    sol: {
-      type: String,
-      default: "0",
-    },
+  fundingBalances: { // balances that waiting to withdraw
+    type: Map,
+    of: String,
+    default: {},
   },
 }, { timestamps: true });
-
 
 module.exports = mongoose.model("WalletBalance", walletBalanceSchema);

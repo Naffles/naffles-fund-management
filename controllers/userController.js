@@ -1,10 +1,7 @@
-const { Treasury, initializeTreasury } = require("../models/analytics/treasury");
-const UserDepositAndWithdrawHistory = require("../models/analytics/userDepositAndWithdrawHistory");
 const Deposit = require("../models/transactions/deposit");
 const Withdraw = require("../models/transactions/withdraw");
 const WalletAddress = require("../models/user/walletAddress");
-const WalletBalance = require("../models/user/walletBalance");
-const createWalletBalance = require("../utils/createWalletBalance");
+const { findOrCreateWalletBalance, updateTreasuryBalance, updateUserWalletHistory } = require("../utils/helpers");
 
 exports.depositTokens = async (coinType, address, amount, txHash, network) => {
   try {
@@ -13,184 +10,69 @@ exports.depositTokens = async (coinType, address, amount, txHash, network) => {
       console.log("No user account detected: ", address);
       return;
     }
-    // create wallet balance if not existing
-    await createWalletBalance(wallet.userRef);
-    // save deposit data
+
     const newDepositTransaction = new Deposit({
       userRef: wallet.userRef,
       fromAddress: address,
-      amount: amount,
+      amount,
       transactionHash: txHash,
-      coinType: coinType,
+      coinType,
       chainId: network,
-      transactionDetails: 'NA',
     });
     await newDepositTransaction.save();
 
-    // update treasury walet balance
-    let treasury = await Treasury.findOne();
-    if (!treasury) {
-      console.log("no treasury document");
-    }
-    const currentTotalTreasuryBalance = treasury?.balances[coinType]
-      ? BigInt(treasury.balances[coinType].toString())
-      : BigInt(0);
-    const newTotalTreasuryBalance = currentTotalTreasuryBalance + amount;
-    treasury.balances[coinType] = newTotalTreasuryBalance.toString();
-    await treasury.save();
+    await updateTreasuryBalance(coinType, amount, true);
 
-    // update wallet's balance
-    let walletBalance = await WalletBalance.findOne({ userRef: wallet.userRef });
-    if (!walletBalance) {
-      console.log("No wallet found for address: ", address);
-      console.log("creating new wallet for: ", wallet.userRef);
-      walletBalance = new WalletBalance({ userRef: wallet.userRef });
-      await walletBalance.save();
-    }
-
-    const currentBalance = walletBalance.balances[coinType]
-      ? BigInt(walletBalance.balances[coinType].toString())
-      : BigInt(0);
-    const updatedBalance = currentBalance + amount;
-    walletBalance.balances[coinType] = updatedBalance.toString();
+    const walletBalance = await findOrCreateWalletBalance(wallet.userRef);
+    const currentBalance = BigInt(walletBalance.balances.get(coinType) || "0");
+    const updatedBalance = (currentBalance + BigInt(amount)).toString();
+    walletBalance.balances.set(coinType, updatedBalance);
     await walletBalance.save();
 
-    // Update user's deposit history 
-    let userWalletHistory = await UserDepositAndWithdrawHistory
-      .findOne({ userRef: wallet.userRef })
-      .sort({ createdAt: -1 });
-
-    const newUserWalletHistory = new UserDepositAndWithdrawHistory({
-      actionId: newDepositTransaction._id,
-      userRef: wallet.userRef,
-      totalDepositedAmount: {
-        eth: userWalletHistory?.totalDepositedAmount?.eth || "0",
-        sol: userWalletHistory?.totalDepositedAmount?.sol || "0",
-      },
-      totalWithdrawnAmount: {
-        eth: userWalletHistory?.totalWithdrawnAmount?.eth || "0",
-        sol: userWalletHistory?.totalWithdrawnAmount?.sol || "0",
-      }
-    });
-
-    const currentTotalDeposit = userWalletHistory?.totalDepositedAmount[coinType]
-      ? BigInt(userWalletHistory.totalDepositedAmount[coinType].toString())
-      : BigInt(0);
-    const newTotalDeposit = currentTotalDeposit + amount;
-    newUserWalletHistory.totalDepositedAmount[coinType] = newTotalDeposit.toString();
-
-    await newUserWalletHistory.save();
+    await updateUserWalletHistory(wallet.userRef, newDepositTransaction._id, coinType, amount, true);
     console.log("deposit successful");
   } catch (error) {
     console.error("Error deposit updating wallet balance:", error);
-    // sendResponse(res, 500, "An error occurred while updating the wallet balance.");
   }
 };
 
 exports.withdrawTokens = async (coinType, address, amount, txHash, network) => {
   try {
-    // find user connected to the wallet
-    const wallet = await WalletAddress.findOne({ address: address });
+    const wallet = await WalletAddress.findOne({ address });
     if (!wallet) {
-      console.log("No user account detected: ", address);
+      console.log("No user account detected:", address);
       return;
     }
-    // create wallet balance if not existing
-    await createWalletBalance(wallet.userRef);
-    // save deposit data
-    // search for withdraw document
-    // update the status to approved
-    const withdrawDocument = await Withdraw.findOneAndUpdate({
+
+    // Find pending withdrawal document
+    const withdrawDocument = await Withdraw.findOne({
       userRef: wallet.userRef,
       status: 'pending',
-      network: network,
-      amount: amount.toString()
-    },
-      {
-        status: 'approved',
-        transactionDetails: 'NA',
-        transactionHash: txHash,
-      },
-      { new: true } // This option ensures the updated document is returned
-    );
+      network,
+      amount: amount.toString(),
+      coinType
+    });
+
     if (!withdrawDocument) {
       console.log("No pending withdraw document found");
       return;
     }
 
-    // Manually update currentUserTotalWithdrawn
-    if (withdrawDocument.currentUserTotalWithdrawn) {
-      const currentWithdrawn = BigInt(withdrawDocument.currentUserTotalWithdrawn);
-      const newWithdrawn = currentWithdrawn + amount;
-      withdrawDocument.currentUserTotalWithdrawn = newWithdrawn.toString();
-    } else {
-      withdrawDocument.currentUserTotalWithdrawn = amount.toString();
-    }
-    await withdrawDocument.save();
-
-    // update treasury walet balance
-    let treasury = await Treasury.findOne();
-    if (!treasury) {
-      console.log("creating treasury document");
-      await initializeTreasury();
-    }
-    const currentTotalTreasuryBalance = treasury?.balances[coinType]
-      ? BigInt(treasury.balances[coinType].toString())
-      : BigInt(0);
-    var newTotalTreasuryBalance;
-    if (currentTotalTreasuryBalance < amount) {
-      newTotalTreasuryBalance = 0;
-    } else {
-      newTotalTreasuryBalance = currentTotalTreasuryBalance - amount;
-    }
-    treasury.balances[coinType] = newTotalTreasuryBalance.toString();
-    await treasury.save();
-
-    // update wallet's balance
-    let walletBalance = await WalletBalance.findOne({ userRef: wallet.userRef });
-    if (!walletBalance) {
-      console.log("No wallet found for address: ", address);
-      console.log("creating new wallet for: ", wallet.userRef);
-      walletBalance = new WalletBalance({ userRef: wallet.userRef });
-      await walletBalance.save();
-      console.log("No wallet balance found for address: ", address);
-    }
-
-    const currentBalance = walletBalance.fundingBalances[coinType]
-      ? BigInt(walletBalance.fundingBalances[coinType].toString())
-      : BigInt(0);
-    const updatedBalance = currentBalance - amount;
-    walletBalance.fundingBalances[coinType] = updatedBalance.toString();
+    await updateTreasuryBalance(coinType, amount, false);
+    const walletBalance = await findOrCreateWalletBalance(wallet.userRef);
+    const currentFundingBalance = BigInt(walletBalance.fundingBalances.get(coinType) || "0");
+    const updatedFundingBalance = currentFundingBalance < BigInt(amount) ? BigInt(0) : currentFundingBalance - BigInt(amount);
+    walletBalance.fundingBalances.set(coinType, updatedFundingBalance.toString());
     await walletBalance.save();
 
-    // Update user's withdraw history 
-    let userWalletHistory = await UserDepositAndWithdrawHistory
-      .findOne({ userRef: wallet.userRef })
-      .sort({ createdAt: -1 });
+    await updateUserWalletHistory(wallet.userRef, withdrawDocument._id, coinType, amount, false);
 
-    const newUserWalletHistory = new UserDepositAndWithdrawHistory({
-      actionId: withdrawDocument._id,
-      userRef: wallet.userRef,
-      totalDepositedAmount: {
-        eth: userWalletHistory?.totalDepositedAmount?.eth || "0",
-        sol: userWalletHistory?.totalDepositedAmount?.sol || "0",
-      },
-      totalWithdrawnAmount: {
-        eth: userWalletHistory?.totalWithdrawnAmount?.eth || "0",
-        sol: userWalletHistory?.totalWithdrawnAmount?.sol || "0",
-      }
-    });
+    withdrawDocument.status = 'approved';
+    withdrawDocument.transactionHash = txHash;
+    await withdrawDocument.save();
 
-    const currentTotalWithdrawn = userWalletHistory?.totalWithdrawnAmount[coinType]
-      ? BigInt(userWalletHistory.totalWithdrawnAmount[coinType].toString())
-      : BigInt(0);
-    const newTotalWithdrawn = currentTotalWithdrawn + amount;
-    newUserWalletHistory.totalWithdrawnAmount[coinType] = newTotalWithdrawn.toString();
-    await newUserWalletHistory.save();
-    console.log("withdraw successful");
+    console.log("Withdraw successful");
   } catch (error) {
     console.error("Error withdraw updating wallet balance:", error);
-    // sendResponse(res, 500, "An error occurred while updating the wallet balance.");
   }
-
-}
+};

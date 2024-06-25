@@ -29,17 +29,11 @@ const depositSchema = new Schema({
   },
   coinType: {
     type: String,
-    enum: ["eth", "sol"],
     required: true,
   },
   chainId: {
     type: String,
     required: true,
-  },
-  transactionDetails: {
-    type: Schema.Types.Mixed,
-    required: true,
-    select: false,  // Default hide this field
   },
 }, { timestamps: true });
 
