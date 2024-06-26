@@ -15,15 +15,15 @@ try {
   const alchemyInstances = createAlchemyInstances(evmNetworks);
   const solanaInstances = createSolanaInstances(solanaNetworks);
 
-  // Object.keys(alchemyInstances).forEach(network => {
-  //   const alchemyInstance = alchemyInstances[network];
-  //   console.log(`Subscribing to ${network}`);
-  //   try {
-  //     subscribeToMinedTransactions(alchemyInstance, evmServerAddress);
-  //   } catch (error) {
-  //     console.error(`Error subscribing to ${network} mined transactions`, error.message);
-  //   }
-  // });
+  Object.keys(alchemyInstances).forEach(network => {
+    const alchemyInstance = alchemyInstances[network];
+    console.log(`Subscribing to ${network}`);
+    try {
+      subscribeToMinedTransactions(alchemyInstance, evmServerAddress);
+    } catch (error) {
+      console.error(`Error subscribing to ${network} mined transactions`, error.message);
+    }
+  });
 
   Object.keys(solanaInstances).forEach(async (network) => {
     const solanaInstance = solanaInstances[network];
