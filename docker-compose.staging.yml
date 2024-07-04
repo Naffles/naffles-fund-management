@@ -19,4 +19,9 @@ services:
       - /home/interpunct/app/.env.staging:/app/.env.staging
     env_file:
       - .env.staging
+    depends_on:
+      - redis
     command: node index.js
+
+  redis:
+    image: redis

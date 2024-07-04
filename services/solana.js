@@ -26,7 +26,7 @@ const calculateAmount = (preBalance, postBalance) => {
   return absBigInt(BigInt(preBalance) - BigInt(postBalance))
 };
 
-const handleTransaction = async (connection, transaction, monitoredAddress, symbol) => {
+const handleTransaction = async (connection, transaction, monitoredAddress, symbol, network) => {
   const message = transaction.transaction.message;
   const monitoredAddressStr = monitoredAddress.toBase58();
   const txHash = transaction.transaction.signatures[0];
@@ -57,8 +57,8 @@ const handleTransaction = async (connection, transaction, monitoredAddress, symb
           return;
         }
         const amount = calculateAmount(preBalance, postBalance);
-        console.log("withdraw data: ", symbol, decodedRecipient, amount, txHash, 'sol')
-        await withdrawTokens(symbol, decodedRecipient, amount, txHash, 'sol');
+        console.log("withdraw data: ", symbol, decodedRecipient, amount, txHash, network)
+        await withdrawTokens(symbol, decodedRecipient, amount, txHash, network);
       }
       else if (recipient === monitoredAddressStr) {
         const preBalance = isSol ? transaction.meta.preBalances[monitoredIndex] : transaction.meta.preTokenBalances.find(b => b.owner === decodedRecipient)?.uiTokenAmount.amount;
@@ -68,26 +68,30 @@ const handleTransaction = async (connection, transaction, monitoredAddress, symb
           return;
         }
         const amount = calculateAmount(preBalance, postBalance);
-        console.log("deposit data: ", symbol, sender, amount, txHash, 'sol')
-        await depositTokens(symbol, sender, amount, txHash, 'sol');
+        console.log("deposit data: ", symbol, sender, amount, txHash, network)
+        await depositTokens(symbol, sender, amount, txHash, network);
       }
     }
   });
 };
 
-const processTransaction = async (connection, transaction, monitoredAddress, network, symbol, subscriptionId) => {
+const processTransaction = async (connection, transaction, monitoredAddress, network, symbol, isNativeTokenPresent, nativeTokenSubscriptionId) => {
   if (!transaction) return;
 
   const message = transaction.transaction.message;
   const programIds = message.instructions.map(instruction => message.accountKeys[instruction.programIdIndex].toBase58());
   const isSolTransaction = programIds.includes('11111111111111111111111111111111');
   const isSplTransaction = programIds.includes(TOKEN_PROGRAM_ID.toBase58());
-
+  network = `sol-${network}`;
   if (isSolTransaction) {
-    await handleTransaction(connection, transaction, monitoredAddress, symbol);
+    await handleTransaction(connection, transaction, monitoredAddress, symbol, network);
   }
-  if (isSplTransaction && subscriptionId != 0) {
-    await handleTransaction(connection, transaction, monitoredAddress, symbol);
+
+  if (isSplTransaction) {
+    if ((isNativeTokenPresent && nativeTokenSubscriptionId !== null) ||
+      (!isNativeTokenPresent && nativeTokenSubscriptionId === null)) {
+      await handleTransaction(connection, transaction, monitoredAddress, symbol, network);
+    }
   }
 };
 
@@ -97,16 +101,17 @@ const subscribeToTransactions = (
   network,
   spl = false,
   symbol,
+  isNativeTokenPresent,
+  nativeTokenSubscriptionId = null
 ) => {
   const publicKey = spl ? address : new PublicKey(address);
   console.log(`Subscribing to transactions for publicKey: ${publicKey.toBase58()}`);
   const subscriptionId = connection.onLogs(publicKey, async (log) => {
     if (log.err === null) {
       const transaction = await connection.getTransaction(log.signature, { commitment: 'confirmed' });
-      processTransaction(connection, transaction, publicKey, network, symbol, subscriptionId);
+      processTransaction(connection, transaction, publicKey, network, symbol, isNativeTokenPresent, nativeTokenSubscriptionId);
     }
   }, 'confirmed');
-  // console.log("subscription id : ", subscriptionId);
   return subscriptionId;
 };
 

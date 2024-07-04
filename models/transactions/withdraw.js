@@ -31,10 +31,6 @@ const withdrawSchema = new Schema({
     type: String,
     required: true,
   },
-  chainId: {
-    type: String,
-    index: true
-  },
   status: {
     type: String,
     required: true,
@@ -45,7 +41,11 @@ const withdrawSchema = new Schema({
   network: {
     type: String,
     required: true,
-    enum: ["eth", "sol"],
+  },
+  blockNumber: {
+    type: Number,
+    sparse: true,
+    index: true,
   },
   currentTreasuryBalance: {
     type: String,

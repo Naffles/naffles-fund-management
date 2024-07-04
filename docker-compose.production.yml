@@ -19,4 +19,9 @@ services:
       - ./.env.production:/app/.env.production
     env_file:
       - .env.production
+    depends_on:
+      - redis
     command: node index.js
+
+  redis:
+    image: redis
