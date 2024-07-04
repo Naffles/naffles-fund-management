@@ -1,6 +1,9 @@
+const { getAsync, setAsync } = require("../config/redisClient");
+const AllowableTokenContractsForLotteries = require("../models/admin/allowableTokenContractsForLotteries");
 const { Treasury, initializeTreasury } = require("../models/analytics/treasury");
 const UserDepositAndWithdrawHistory = require("../models/analytics/userDepositAndWithdrawHistory");
 const WalletBalance = require("../models/user/walletBalance");
+const mongoose = require("mongoose");
 
 const findOrCreateWalletBalance = async (userRef) => {
   let walletBalance = await WalletBalance.findOne({ userRef });
@@ -50,8 +53,41 @@ const updateUserWalletHistory = async (userRef, actionId, coinType, amount, isDe
   await newHistory.save();
 };
 
+const fetchSupportedTokens = async (network) => {
+  try {
+    // Check if a native token is present
+    const isNativeTokenPresent = await AllowableTokenContractsForLotteries.exists({ network, isNativeToken: true }) ? true : false;
+    
+    const tokens = await AllowableTokenContractsForLotteries
+      .find({ network })
+      .sort({ updatedAt: -1 });
+    // Map the documents to the desired format
+    var isDocumentUpdated = false;
+    const supportedTokens = tokens.map(token => ({
+      address: network.slice(0, 3) == 'sol' ? token.contractAddress : token.contractAddress.toLowerCase(),
+      symbol: token.ticker,
+      decimal: token.decimal,
+      network: token.network,
+      isNativeToken: token.isNativeToken
+    }));
+
+    if (tokens.length > 0) {
+      const lastUpdatedTimestamp = tokens[0].updatedAt;
+      const lastUpdate = await getAsync(`networkLastUpdated:${network}`);
+      if (lastUpdatedTimestamp != lastUpdate) {
+        await setAsync(`networkLastUpdated:${network}`, lastUpdatedTimestamp);
+        isDocumentUpdated = true;
+      }
+    }
+    return { supportedTokens, isDocumentUpdated, isNativeTokenPresent };
+  } catch (error) {
+    console.error("Error fetching supported tokens:", error);
+  }
+};
+
 module.exports = {
   findOrCreateWalletBalance,
   updateTreasuryBalance,
-  updateUserWalletHistory
+  updateUserWalletHistory,
+  fetchSupportedTokens
 };

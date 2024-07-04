@@ -19,4 +19,9 @@ services:
       - /home/interpunct/app/.env.development:/app/.env.development
     env_file:
       - .env.development
+    depends_on:
+      - redis
     command: node index.js
+
+  redis:
+    image: redis

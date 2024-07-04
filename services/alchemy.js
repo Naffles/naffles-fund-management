@@ -2,6 +2,11 @@ const { Alchemy, AlchemySubscription } = require("alchemy-sdk");
 const alchemyConfigs = require('../config/alchemyConfig');
 const { depositTokens, withdrawTokens } = require("../controllers/userController");
 const { ethers } = require('ethers');
+const Deposit = require("../models/transactions/deposit");
+const Withdraw = require("../models/transactions/withdraw");
+const { fetchSupportedTokens } = require("../utils/helpers");
+
+let EVM_SUPPORTED_TOKENS = {};
 
 const createAlchemyInstances = (networks) => {
   const instances = {};
@@ -15,61 +20,107 @@ const createAlchemyInstances = (networks) => {
   return instances;
 };
 
-const subscribeToNewBlocks = (alchemyInstance) => {
-  alchemyInstance.ws.on("block", (blockNumber) => {
-    console.log("The latest block number is", blockNumber);
-  });
+const getLatestBlockNumber = async (network) => {
+  const deposit = await Deposit.findOne({ network }).sort({ blockNumber: -1 });
+  const withdraw = await Withdraw.findOne({ network }).sort({ blockNumber: -1 });
+
+  const depositBlockNumber = deposit?.blockNumber || 0;
+  const withdrawBlockNumber = withdraw?.blockNumber || 0;
+
+  const latestBlockNumber = Math.max(depositBlockNumber, withdrawBlockNumber);
+  // Convert to hexadecimal and ensure it has '0x' prefix
+  const latestBlockNumberHex = `0x${latestBlockNumber.toString(16)}`;
+  return latestBlockNumberHex;
 };
 
-const subscribeToMinedTransactions = (alchemyInstance, addresses) => {
-  addresses.forEach((address) => {
-    alchemyInstance.ws.on(
-      {
-        method: AlchemySubscription.MINED_TRANSACTIONS,
-        addresses: [{ to: address }, { from: address }],
-        includeRemoved: true,
-        hashesOnly: false,
-      },
-      async (tx) => {
-        tx = tx.transaction;
-        // Invalidate if the to and from of the user is the same.
-        if (tx.to.toLowerCase() === tx.from.toLowerCase()) {
-          console.log("Transaction sent to itself");
-          return;
-        }
-        const action = (tx.to.toLowerCase() === address.toLowerCase()) ? 'deposit' : 'withdraw';
-        const cointType = 'eth'
-        const txHash = (tx.hash);
-        const chainId = tx.chainId;
+const getUserTransfers = async (alchemyInstance, addresses) => {
+  const network = alchemyInstance.core.config.network;
+  // find the minumum block number
+  const blockNumber = await getLatestBlockNumber(network);
+  const { supportedTokens, isDocumentUpdated, isNativeTokenPresent } = await fetchSupportedTokens(network);
+  EVM_SUPPORTED_TOKENS[network] = supportedTokens;
+  for (const address of addresses) {
+    try {
+      const fromTransfers = await alchemyInstance.core.getAssetTransfers({
+        fromBlock: blockNumber,
+        fromAddress: address,
+        category: ["external", "erc20"],
+      });
+
+      const toTransfers = await alchemyInstance.core.getAssetTransfers({
+        fromBlock: blockNumber,
+        toAddress: address,
+        category: ["external", "erc20"],
+      });
+
+      // Combine the results
+      const allTransfers = [...fromTransfers.transfers, ...toTransfers.transfers];
+      allTransfers.sort((a, b) => parseInt(a.blockNum, 16) - parseInt(b.blockNum, 16));
+
+      for (const transfer of allTransfers) {
         try {
-          if (action == 'deposit') {
-            await depositTokens(
-              cointType,
-              ethers.getAddress(tx.from),
-              BigInt(tx.value),
-              txHash,
-              chainId
-            );
-          } else { // 'withdraw
-            await withdrawTokens(
-              cointType,
-              ethers.getAddress(tx.to),
-              BigInt(tx.value),
-              txHash,
-              'eth'
-            );
+          const blockNumDecimal = parseInt(transfer.blockNum, 16);
+          const txHash = transfer.hash;
+          const actionType = transfer.to && transfer.to.toLowerCase() === address.toLowerCase() ? 'deposit' : 'withdraw';
+          const value = transfer.rawContract && transfer.rawContract.value ? BigInt(transfer.rawContract.value) : null;
+          const contractAddress = transfer.rawContract && transfer.rawContract.address ? transfer.rawContract.address.toLowerCase() : null;
+          const category = transfer.category;
+          const from = ethers.getAddress(transfer.from);
+          const to = ethers.getAddress(transfer.to);
+
+          if (category === 'external' && isNativeTokenPresent) {
+            await handleExternalTransfer(actionType, transfer.asset, from, to, value, txHash, network, blockNumDecimal);
+          } else if (category === 'erc20') {
+            await handleErc20Transfer(actionType, contractAddress, from, to, value, txHash, network, blockNumDecimal);
           }
-        } catch (error) {
-          console.error('Error updating balance:', error);
+        } catch (transferError) {
+          console.error(`Error processing transfer: ${transfer.hash}`, transferError);
         }
       }
-    );
-  });
+    } catch (fetchError) {
+      console.error(`Error fetching transfers for address: ${address}`, fetchError);
+    }
+  }
+};
+
+const handleExternalTransfer = async (actionType, asset, from, to, value, txHash, network, blockNumDecimal) => {
+  try {
+    const coinType = asset.toLowerCase();
+    if (actionType === 'deposit') {
+      // console.log("eth deposited: ", coinType, from, value, txHash, network, blockNumDecimal);
+      await depositTokens(coinType, from, value, txHash, network, blockNumDecimal);
+    } else {
+      // console.log("withdraw: ", coinType, to, value, txHash, network, blockNumDecimal);
+      await withdrawTokens(coinType, to, value, txHash, network, blockNumDecimal);
+    }
+  } catch (externalTransferError) {
+    console.error(`Error handling external transfer: ${txHash}`, externalTransferError);
+  }
+};
+
+const handleErc20Transfer = async (actionType, contractAddress, from, to, value, txHash, network, blockNumDecimal) => {
+  try {
+    const token = EVM_SUPPORTED_TOKENS[network].find(token => token.address === contractAddress);
+    if (token && token.network == network) {
+      const coinType = token.symbol;
+      if (actionType === 'deposit') {
+        // console.log("erc20 deposited: ", coinType, from, value, txHash, network, blockNumDecimal);
+        await depositTokens(coinType, from, value, txHash, network, blockNumDecimal);
+      } else {
+        // console.log("withdraw: ", coinType, to, value, txHash, network, blockNumDecimal);
+        await withdrawTokens(coinType, to, value, txHash, network, blockNumDecimal);
+      }
+    } else {
+      console.log("token not supported: ", token, contractAddress, network, actionType);
+    }
+  } catch (erc20TransferError) {
+    console.error(`Error handling ERC20 transfer: ${txHash}`, erc20TransferError);
+  }
 };
 
 
 module.exports = {
   createAlchemyInstances,
-  subscribeToNewBlocks,
-  subscribeToMinedTransactions
+  // subscribeToMinedTransactions,
+  getUserTransfers
 };

@@ -31,10 +31,15 @@ const depositSchema = new Schema({
     type: String,
     required: true,
   },
-  chainId: {
+  network: {
     type: String,
     required: true,
   },
+  blockNumber: {
+    type: Number,
+    sparse: true,
+    index: true,
+  }
 }, { timestamps: true });
 
 depositSchema.pre("validate", async function (next) {

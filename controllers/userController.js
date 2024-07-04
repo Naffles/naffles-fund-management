@@ -3,11 +3,18 @@ const Withdraw = require("../models/transactions/withdraw");
 const WalletAddress = require("../models/user/walletAddress");
 const { findOrCreateWalletBalance, updateTreasuryBalance, updateUserWalletHistory } = require("../utils/helpers");
 
-exports.depositTokens = async (coinType, address, amount, txHash, network) => {
+exports.depositTokens = async (coinType, address, amount, txHash, network, blockNumber) => {
   try {
     const wallet = await WalletAddress.findOne({ address: address });
     if (!wallet) {
       console.log("No user account detected: ", address);
+      return;
+    }
+
+    // Verify the transaction is not already in the database
+    const existingDeposit = await Deposit.findOne({ transactionHash: txHash });
+    if (existingDeposit) {
+      // console.log("Transaction already exists in the database: ", txHash);
       return;
     }
 
@@ -17,7 +24,8 @@ exports.depositTokens = async (coinType, address, amount, txHash, network) => {
       amount,
       transactionHash: txHash,
       coinType,
-      chainId: network,
+      network,
+      blockNumber
     });
     await newDepositTransaction.save();
 
@@ -32,11 +40,11 @@ exports.depositTokens = async (coinType, address, amount, txHash, network) => {
     await updateUserWalletHistory(wallet.userRef, newDepositTransaction._id, coinType, amount, true);
     console.log("deposit successful");
   } catch (error) {
-    console.error("Error deposit updating wallet balance:", error);
+    console.error(`Error deposit updating wallet balance on ${network}:`, error?.errorResponse?.errmsg || error);
   }
 };
 
-exports.withdrawTokens = async (coinType, address, amount, txHash, network) => {
+exports.withdrawTokens = async (coinType, address, amount, txHash, network, blockNumber) => {
   try {
     const wallet = await WalletAddress.findOne({ address });
     if (!wallet) {
@@ -50,11 +58,12 @@ exports.withdrawTokens = async (coinType, address, amount, txHash, network) => {
       status: 'pending',
       network,
       amount: amount.toString(),
-      coinType
+      coinType,
+      blockNumber
     });
 
     if (!withdrawDocument) {
-      console.log("No pending withdraw document found");
+      // console.log("No pending withdraw document found for: ", wallet.userRef);
       return;
     }
 
