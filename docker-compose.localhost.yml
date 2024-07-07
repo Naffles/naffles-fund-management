@@ -19,23 +19,8 @@ services:
     env_file:
       - .env.localhost
     depends_on:
-      - mongo-2
+      - redis
     command: npm run dev
-    
-  mongo-2:
-    image: mongo
-    ports:
-      - "27018:27017"
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=ray
-      - MONGO_INITDB_ROOT_PASSWORD=mypassword123
-    volumes:
-      - mongo-db:/data/db
-      
-  redis-2:
-    image: redis
-    ports:
-      - "6380:6379"
 
-volumes:
-  mongo-db:
+  redis:
+    image: redis
