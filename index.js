@@ -55,7 +55,7 @@ const { delAsync } = require('./config/redisClient');
           try {
             var baseSubscriptionId;
             if (isNativeTokenPresent) {
-              baseSubscriptionId = subscribeToTransactions(solanaInstance, solanaServerAddress, network, false, 'sol', isNativeTokenPresent);
+              baseSubscriptionId = subscribeToTransactions(solanaInstance, solanaServerAddress, `sol-${network}`, false, 'sol', isNativeTokenPresent);
               solanaInstance.subscriptionIds.push(baseSubscriptionId);
             }
             for (const token of supportedTokens) {

@@ -18,80 +18,67 @@ const createSolanaInstances = (networks) => {
   return instances;
 };
 
-const absBigInt = (value) => {
-  return value < 0n ? -value : value;
-};
+const handleParsedTransaction = async (connection, txHash, network, parsed, monitoredAddressStr, isSol, symbol) => {
+  try {
+    let from = parsed.info.source;
+    let to = parsed.info.destination;
+    const amount = isSol ? parsed.info.lamports : (parsed.info?.tokenAmount?.amount || parsed.info?.amount);
 
-const calculateAmount = (preBalance, postBalance) => {
-  return absBigInt(BigInt(preBalance) - BigInt(postBalance))
+    if (to === monitoredAddressStr) {
+      from = isSol ? from : await getOwnerOfTokenAccount(connection, from);
+      console.log("Deposit data: ", symbol, from, amount, txHash, network);
+      await depositTokens(symbol, from, amount, txHash, network);
+    } else if (from === monitoredAddressStr) {
+      to = isSol ? to : await getOwnerOfTokenAccount(connection, to);
+      console.log("Withdraw data: ", symbol, to, amount, txHash, network);
+      await withdrawTokens(symbol, to, amount, txHash, network);
+    }
+  } catch (error) {
+    console.error(`Error handling parsed transaction: ${error.message}`, error);
+  }
 };
 
 const handleTransaction = async (connection, transaction, monitoredAddress, symbol, network) => {
-  const message = transaction.transaction.message;
-  const monitoredAddressStr = monitoredAddress.toBase58();
-  const txHash = transaction.transaction.signatures[0];
-  const isSol = 'sol' === symbol ? true : false;
-  message.instructions.forEach(async (instruction) => {
-    const keys = instruction.accounts.map(index => message.accountKeys[index].toBase58());
-    if (keys.includes(monitoredAddressStr)) {
-      // for sol computation indexes
-      const monitoredIndex = keys.indexOf(monitoredAddressStr);
-      const otherIndex = monitoredIndex === 0 ? 1 : 0;
+  try {
+    const { message } = transaction.transaction;
+    const monitoredAddressStr = monitoredAddress.toBase58();
+    const txHash = transaction.transaction.signatures[0];
+    const isSol = symbol === 'sol';
 
-      const senderIndex = isSol ? 0 : 3;
-      const recipientIndex = isSol ? 1 : 2;
-      const sender = keys[senderIndex];
-      const recipient = keys[recipientIndex];
-      const decodedRecipient = isSol ? recipient : await getOwnerOfTokenAccount(connection, recipient);
+    for (const instruction of message.instructions) {
+      const programId = instruction.programId.toBase58();
+      const { parsed } = instruction;
 
-      // console.log("sender: ", sender)
-      // console.log("recipient: ", recipient, decodedRecipient)
-      // console.log("monitoredAddress: ", monitoredAddressStr);
-      // console.log("keys: ", keys);
-
-      if (sender === monitoredAddressStr || (!isSol && sender == await getOwnerOfTokenAccount(connection, monitoredAddressStr))) {
-        const preBalance = isSol ? transaction.meta.preBalances[otherIndex] : transaction.meta.preTokenBalances.find(b => b.owner === decodedRecipient)?.uiTokenAmount.amount;
-        const postBalance = isSol ? transaction.meta.postBalances[otherIndex] : transaction.meta.postTokenBalances.find(b => b.owner === decodedRecipient)?.uiTokenAmount.amount;
-        if (!postBalance && !preBalance) {
-          console.log("withdraw post and pre balances equals to null");
-          return;
-        }
-        const amount = calculateAmount(preBalance, postBalance);
-        console.log("withdraw data: ", symbol, decodedRecipient, amount, txHash, network)
-        await withdrawTokens(symbol, decodedRecipient, amount, txHash, network);
-      }
-      else if (recipient === monitoredAddressStr) {
-        const preBalance = isSol ? transaction.meta.preBalances[monitoredIndex] : transaction.meta.preTokenBalances.find(b => b.owner === decodedRecipient)?.uiTokenAmount.amount;
-        const postBalance = isSol ? transaction.meta.postBalances[monitoredIndex] : transaction.meta.postTokenBalances.find(b => b.owner === decodedRecipient)?.uiTokenAmount.amount;
-        if (!postBalance && !preBalance) {
-          console.log("deposit post and pre balances equals to null");
-          return;
-        }
-        const amount = calculateAmount(preBalance, postBalance);
-        console.log("deposit data: ", symbol, sender, amount, txHash, network)
-        await depositTokens(symbol, sender, amount, txHash, network);
+      if ((isSol && programId === '11111111111111111111111111111111') ||
+        (!isSol && programId === TOKEN_PROGRAM_ID.toBase58())) {
+        await handleParsedTransaction(connection, txHash, network, parsed, monitoredAddressStr, isSol, symbol);
       }
     }
-  });
+  } catch (error) {
+    console.error(`Error handling transaction: ${error.message}`, error);
+  }
 };
 
 const processTransaction = async (connection, transaction, monitoredAddress, network, symbol, isNativeTokenPresent, nativeTokenSubscriptionId) => {
-  if (!transaction) return;
+  try {
+    if (!transaction) return;
+    const message = transaction.transaction.message;
+    const programIds = message.instructions.map(instruction => (instruction.programId).toBase58());
+    const isSolTransaction = programIds.includes('11111111111111111111111111111111');
+    const isSplTransaction = programIds.includes(TOKEN_PROGRAM_ID.toBase58());
 
-  const message = transaction.transaction.message;
-  const programIds = message.instructions.map(instruction => message.accountKeys[instruction.programIdIndex].toBase58());
-  const isSolTransaction = programIds.includes('11111111111111111111111111111111');
-  const isSplTransaction = programIds.includes(TOKEN_PROGRAM_ID.toBase58());
-  network = `sol-${network}`;
-  if (isSolTransaction) {
-    await handleTransaction(connection, transaction, monitoredAddress, symbol, network);
-  }
-
-  if (isSplTransaction) {
-    if ((isNativeTokenPresent && nativeTokenSubscriptionId !== null) ||
-      (!isNativeTokenPresent && nativeTokenSubscriptionId === null)) {
+    if (isSolTransaction) {
       await handleTransaction(connection, transaction, monitoredAddress, symbol, network);
     }
+
+    if (isSplTransaction) {
+      if ((isNativeTokenPresent && nativeTokenSubscriptionId !== null) ||
+        (!isNativeTokenPresent && nativeTokenSubscriptionId === null)) {
+        await handleTransaction(connection, transaction, monitoredAddress, symbol, network);
+      }
+    }
+  } catch (error) {
+    console.error(`Error processing transaction: ${error.message}`, error);
   }
 };
 
@@ -104,27 +91,41 @@ const subscribeToTransactions = (
   isNativeTokenPresent,
   nativeTokenSubscriptionId = null
 ) => {
-  const publicKey = spl ? address : new PublicKey(address);
-  console.log(`Subscribing to transactions for publicKey: ${publicKey.toBase58()}`);
-  const subscriptionId = connection.onLogs(publicKey, async (log) => {
-    if (log.err === null) {
-      const transaction = await connection.getTransaction(log.signature, { commitment: 'confirmed' });
-      processTransaction(connection, transaction, publicKey, network, symbol, isNativeTokenPresent, nativeTokenSubscriptionId);
-    }
-  }, 'confirmed');
-  return subscriptionId;
+  try {
+    const publicKey = spl ? address : new PublicKey(address);
+    console.log(`Subscribing to transactions for publicKey: ${publicKey.toBase58()}`);
+    const subscriptionId = connection.onLogs(publicKey, async (log) => {
+      try {
+        if (log.err === null) {
+          const transaction = await connection.getParsedTransaction(log.signature, { commitment: 'confirmed' });
+          await processTransaction(connection, transaction, publicKey, network, symbol, isNativeTokenPresent, nativeTokenSubscriptionId);
+        }
+      } catch (error) {
+        console.error(`Error processing log entry for publicKey ${publicKey.toBase58()}: ${error.message}`, error);
+      }
+    }, 'confirmed');
+    return subscriptionId;
+  } catch (error) {
+    console.error(`Error subscribing to transactions for address ${address.toString()}: ${error.message}`, error);
+  }
 };
 
 const findAssociatedTokenAddress = async (walletAddress, tokenMintAddress) => {
-  const associatedTokenAddress = await getAssociatedTokenAddress(
-    new PublicKey(tokenMintAddress),
-    new PublicKey(walletAddress),
-    false, // allowOwnerOffCurve (set to false in most cases)
-    TOKEN_PROGRAM_ID,
-    ASSOCIATED_TOKEN_PROGRAM_ID
-  );
-  return associatedTokenAddress;
+  try {
+    const associatedTokenAddress = await getAssociatedTokenAddress(
+      new PublicKey(tokenMintAddress),
+      new PublicKey(walletAddress),
+      false, // allowOwnerOffCurve (set to false in most cases)
+      TOKEN_PROGRAM_ID,
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+    return associatedTokenAddress;
+  } catch (error) {
+    console.error(`Error finding associated token address for wallet ${walletAddress.toString()} and token mint ${tokenMintAddress.toString()}: ${error.message}`, error);
+    throw error;
+  }
 };
+
 
 const getOwnerOfTokenAccount = async (connection, tokenAccountAddress) => {
   try {
