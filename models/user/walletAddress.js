@@ -19,12 +19,6 @@ const walletAddressSchema = new Schema({
     required: true,
     enum: ["phantom", "metamask"]
   },
-  network: {
-    type: String,
-    required: true,
-    enum: ["eth", "sol"],
-    index: true,
-  },
 });
 
 module.exports = mongoose.model("WalletAddress", walletAddressSchema);

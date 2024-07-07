@@ -59,7 +59,6 @@ exports.withdrawTokens = async (coinType, address, amount, txHash, network, bloc
       network,
       amount: amount.toString(),
       coinType,
-      blockNumber
     });
 
     if (!withdrawDocument) {
@@ -78,6 +77,7 @@ exports.withdrawTokens = async (coinType, address, amount, txHash, network, bloc
 
     withdrawDocument.status = 'approved';
     withdrawDocument.transactionHash = txHash;
+    withdrawDocument.blockNumber = blockNumber;
     await withdrawDocument.save();
 
     console.log("Withdraw successful");
