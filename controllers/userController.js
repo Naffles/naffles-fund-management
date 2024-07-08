@@ -7,7 +7,7 @@ exports.depositTokens = async (coinType, address, amount, txHash, network, block
   try {
     const wallet = await WalletAddress.findOne({ address: address });
     if (!wallet) {
-      console.log("No user account detected: ", address);
+      // console.log("No user account detected: ", address);
       return;
     }
 
