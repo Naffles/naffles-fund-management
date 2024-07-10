@@ -11,6 +11,14 @@ const allowableTokenContractsForLotteriesSchema = new Schema({
   isNativeToken: Boolean
 }, { timestamps: true });
 
+// Pre-save hook to set the ticker to lowercase
+allowableTokenContractsForLotteriesSchema.pre('save', function (next) {
+  if (this.isModified('ticker')) {
+    this.ticker = this.ticker.toLowerCase();
+  }
+  next();
+});
+
 module.exports = mongoose.model(
   "AllowableTokenContractsForLotteries",
   allowableTokenContractsForLotteriesSchema

@@ -3,8 +3,9 @@ const Withdraw = require("../models/transactions/withdraw");
 const WalletAddress = require("../models/user/walletAddress");
 const { findOrCreateWalletBalance, updateTreasuryBalance, updateUserWalletHistory } = require("../utils/helpers");
 
-exports.depositTokens = async (coinType, address, amount, txHash, network, blockNumber) => {
+exports.depositTokens = async (coin, address, amount, txHash, network, blockNumber) => {
   try {
+    const coinType = coin.toLowerCase();
     const wallet = await WalletAddress.findOne({ address: address });
     if (!wallet) {
       // console.log("No user account detected: ", address);
@@ -44,8 +45,9 @@ exports.depositTokens = async (coinType, address, amount, txHash, network, block
   }
 };
 
-exports.withdrawTokens = async (coinType, address, amount, txHash, network, blockNumber) => {
+exports.withdrawTokens = async (coin, address, amount, txHash, network, blockNumber) => {
   try {
+    const coinType = coin.toLowerCase();
     const wallet = await WalletAddress.findOne({ address });
     if (!wallet) {
       console.log("No user account detected:", address);
