@@ -111,7 +111,7 @@ const handleErc20Transfer = async (actionType, contractAddress, from, to, value,
         await withdrawTokens(coinType, to, value, txHash, network, blockNumDecimal);
       }
     } else {
-      console.log("token not supported: ", token, contractAddress, network, actionType);
+      // console.log("token not supported: ", token, contractAddress, network, actionType);
     }
   } catch (erc20TransferError) {
     console.error(`Error handling ERC20 transfer: ${txHash}`, erc20TransferError);
@@ -121,6 +121,5 @@ const handleErc20Transfer = async (actionType, contractAddress, from, to, value,
 
 module.exports = {
   createAlchemyInstances,
-  // subscribeToMinedTransactions,
   getUserTransfers
 };
