@@ -11,12 +11,22 @@ const treasurySchema = new Schema({
 
 const Treasury = mongoose.model("Treasury", treasurySchema);
 
-const initializeTreasury = async () => {
+const initializeTreasury = async (session = null) => {
   try {
-    const treasury = await Treasury.findOne({});
+    let treasury;
+    if (session) {
+      treasury = await Treasury.findOne({}).session(session);
+    } else {
+      treasury = await Treasury.findOne({});
+    }
+
     if (!treasury) {
       const newTreasury = new Treasury({});
-      await newTreasury.save();
+      if (session) {
+        await newTreasury.save({ session });
+      } else {
+        await newTreasury.save();
+      }
       console.log("Treasury initialized with default values.");
     } else {
       console.log("Treasury already exists.");
@@ -25,5 +35,6 @@ const initializeTreasury = async () => {
     console.error("Error initializing treasury:", error);
   }
 };
+
 
 module.exports = { Treasury, initializeTreasury };

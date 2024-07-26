@@ -5,29 +5,29 @@ const UserDepositAndWithdrawHistory = require("../models/analytics/userDepositAn
 const WalletBalance = require("../models/user/walletBalance");
 const mongoose = require("mongoose");
 
-const findOrCreateWalletBalance = async (userRef) => {
-  let walletBalance = await WalletBalance.findOne({ userRef });
+const findOrCreateWalletBalance = async (userRef, session) => {
+  let walletBalance = await WalletBalance.findOne({ userRef }).session(session);
   if (!walletBalance) {
     walletBalance = new WalletBalance({ userRef });
-    await walletBalance.save();
+    await walletBalance.save({ session });
   }
   return walletBalance;
 };
 
-const updateTreasuryBalance = async (coinType, amount, isDeposit = true) => {
-  let treasury = await Treasury.findOne();
+const updateTreasuryBalance = async (coinType, amount, isDeposit = true, session) => {
+  let treasury = await Treasury.findOne().session(session);
   if (!treasury) {
-    await initializeTreasury();
-    treasury = await Treasury.findOne();
+    await initializeTreasury(session);
+    treasury = await Treasury.findOne().session(session);
   }
 
   const currentBalance = BigInt(treasury.balances.get(coinType) || "0");
   const newBalance = isDeposit ? currentBalance + BigInt(amount) : currentBalance < BigInt(amount) ? BigInt(0) : currentBalance - BigInt(amount);
   treasury.balances.set(coinType, newBalance.toString());
-  await treasury.save();
+  await treasury.save({ session });
 };
 
-const updateUserWalletHistory = async (userRef, actionId, coinType, amount, isDeposit = true) => {
+const updateUserWalletHistory = async (userRef, actionId, coinType, amount, isDeposit = true, session) => {
   let lastHistory = await UserDepositAndWithdrawHistory.findOne({ userRef }).sort({ createdAt: -1 });
 
   const newHistory = new UserDepositAndWithdrawHistory({
@@ -50,14 +50,14 @@ const updateUserWalletHistory = async (userRef, actionId, coinType, amount, isDe
   const newTotal = (currentTotal + BigInt(amount)).toString();
   newHistory[isDeposit ? 'totalDepositedAmount' : 'totalWithdrawnAmount'].set(coinType, newTotal);
 
-  await newHistory.save();
+  await newHistory.save({ session });
 };
 
 const fetchSupportedTokens = async (network) => {
   try {
     // Check if a native token is present
     const isNativeTokenPresent = await AllowableTokenContractsForLotteries.exists({ network, isNativeToken: true }) ? true : false;
-    
+
     const tokens = await AllowableTokenContractsForLotteries
       .find({ network })
       .sort({ updatedAt: -1 });
