@@ -1,9 +1,8 @@
-const { EVM_NETWORKS, SOLANA_NETWORKS, EVM_SERVER_ADDRESS, SOLANA_SERVER_ADDRESS, SPL_SUPPORTED_TOKENS } = require('./config/config');
+const { EVM_NETWORKS, SOLANA_NETWORKS, EVM_SERVER_ADDRESS, SOLANA_SERVER_ADDRESS } = require('./config/config');
 const { createAlchemyInstances, getUserTransfers } = require('./services/alchemy');
-const { createSolanaInstances, subscribeToTransactions, findAssociatedTokenAddress } = require('./services/solana');
+const { createSolanaInstances, findAssociatedTokenAddress, processAllTransactions } = require('./services/solana');
 const connectWithRetry = require("./config/database");
 const { fetchSupportedTokens } = require('./utils/helpers');
-const { delAsync } = require('./config/redisClient');
 
 (async () => {
   try {
@@ -31,52 +30,51 @@ const { delAsync } = require('./config/redisClient');
     const solanaNetworks = (SOLANA_NETWORKS || 'devnet').split(',');
     const solanaServerAddress = SOLANA_SERVER_ADDRESS;
     const solanaInstances = createSolanaInstances(solanaNetworks);
+    let isRunning = false;
 
-    const runSolanaTasks = async (init = false) => {
-      for (const network of Object.keys(solanaInstances)) {
-        if (init) {
-          await delAsync(`sol-${network}`);
-        }
-        const solanaInstance = solanaInstances[network];
-        const { supportedTokens, isDocumentUpdated, isNativeTokenPresent } = await fetchSupportedTokens(`sol-${network}`);
-
-        if (isDocumentUpdated || init) {
-          console.log(`Document updated for ${network}, running subscriptions...`);
-
-          // Unsubscribe existing listeners before subscribing
-          if (solanaInstance.subscriptionIds) {
-            for (const subscriptionId of solanaInstance.subscriptionIds) {
-              solanaInstance.removeOnLogsListener(subscriptionId);
-            }
-          }
-
-          solanaInstance.subscriptionIds = [];
-
+    const runSolanaTasks = async () => {
+      if (isRunning) {
+        console.log("runSolanaTasks is already running, skipping this iteration.");
+        return;
+      }
+      isRunning = true;
+      try {
+        for (const network of Object.keys(solanaInstances)) {
+          const solanaInstance = solanaInstances[network];
+          const { supportedTokens, isDocumentUpdated, isNativeTokenPresent } = await fetchSupportedTokens(`sol-${network}`);
+          console.log("INITIALIZED");
           try {
-            var baseSubscriptionId;
             if (isNativeTokenPresent) {
-              baseSubscriptionId = subscribeToTransactions(solanaInstance, solanaServerAddress, `sol-${network}`, false, 'sol', isNativeTokenPresent);
-              solanaInstance.subscriptionIds.push(baseSubscriptionId);
+              await processAllTransactions(solanaInstance, solanaServerAddress, `sol-${network}`, false, 'sol');
             }
             for (const token of supportedTokens) {
               const { address, symbol, decimal, network, isNativeToken } = token;
               if (!isNativeToken) {
                 const serverAddress = await findAssociatedTokenAddress(solanaServerAddress, address);
-                const tokenSubscriptionId = await subscribeToTransactions(solanaInstance, serverAddress, network, true, symbol, isNativeTokenPresent, baseSubscriptionId);
-                solanaInstance.subscriptionIds.push(tokenSubscriptionId);
+                // spl tokens
+                await processAllTransactions(
+                  solanaInstance,
+                  serverAddress,
+                  network,
+                  true,
+                  symbol,
+                )
               }
             }
+            console.log("END----");
           } catch (error) {
             console.error(`Error subscribing to ${network} mined transactions`, error.message);
           }
         }
+      } finally {
+        isRunning = false;
       }
     };
 
     // Run the task immediately once
-    await runSolanaTasks(true);
-    // Set interval to check for updates and re-run the task if needed
-    setInterval(runSolanaTasks, 31 * 1000);
+    await runSolanaTasks();
+    // // Set interval to check for updates and re-run the task if needed 61 seconds
+    setInterval(runSolanaTasks, 61 * 1000);
 
   } catch (error) {
     console.error("Error during initialization:", error.message);
