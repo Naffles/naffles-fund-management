@@ -2,6 +2,7 @@ const { Connection, PublicKey } = require('@solana/web3.js');
 const solanaConfigs = require('../config/solanaConfig');
 const { depositTokens, withdrawTokens } = require('../controllers/userController');
 const { getAssociatedTokenAddress, ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, AccountLayout } = require('@solana/spl-token');
+const { getAsync } = require('../config/redisClient');
 
 const createSolanaInstances = (networks) => {
   const instances = {};
@@ -18,7 +19,7 @@ const createSolanaInstances = (networks) => {
   return instances;
 };
 
-const handleParsedTransaction = async (connection, txHash, network, parsed, monitoredAddressStr, isSol, symbol) => {
+const handleParsedTransaction = async (connection, txHash, network, parsed, monitoredAddressStr, isSol, symbol, targetAddressForUntilSignature, block) => {
   try {
     let from = parsed.info.source;
     let to = parsed.info.destination;
@@ -26,11 +27,11 @@ const handleParsedTransaction = async (connection, txHash, network, parsed, moni
 
     if (to === monitoredAddressStr) {
       from = isSol ? from : await getOwnerOfTokenAccount(connection, from);
-      console.log("Deposit data: ", symbol, from, amount, txHash, network);
-      await depositTokens(symbol, from, amount, txHash, network);
+      console.log("Deposit data: ", symbol, from, amount, txHash, network, targetAddressForUntilSignature);
+      await depositTokens(symbol, from, amount, txHash, network, block, targetAddressForUntilSignature);
     } else if (from === monitoredAddressStr) {
       to = isSol ? to : await getOwnerOfTokenAccount(connection, to);
-      console.log("Withdraw data: ", symbol, to, amount, txHash, network);
+      console.log("Withdraw data: ", symbol, to, amount, txHash, network, block, targetAddressForUntilSignature);
       await withdrawTokens(symbol, to, amount, txHash, network);
     }
   } catch (error) {
@@ -38,7 +39,7 @@ const handleParsedTransaction = async (connection, txHash, network, parsed, moni
   }
 };
 
-const handleTransaction = async (connection, transaction, monitoredAddress, symbol, network) => {
+const handleTransaction = async (connection, transaction, monitoredAddress, symbol, network, targetAddressForUntilSignature, block) => {
   try {
     const { message } = transaction.transaction;
     const monitoredAddressStr = monitoredAddress.toBase58();
@@ -51,7 +52,7 @@ const handleTransaction = async (connection, transaction, monitoredAddress, symb
 
       if ((isSol && programId === '11111111111111111111111111111111') ||
         (!isSol && programId === TOKEN_PROGRAM_ID.toBase58())) {
-        await handleParsedTransaction(connection, txHash, network, parsed, monitoredAddressStr, isSol, symbol);
+        await handleParsedTransaction(connection, txHash, network, parsed, monitoredAddressStr, isSol, symbol, targetAddressForUntilSignature, block);
       }
     }
   } catch (error) {
@@ -142,9 +143,82 @@ const getOwnerOfTokenAccount = async (connection, tokenAccountAddress) => {
   }
 };
 
+const getAllSignatures = async (connection, address) => {
+  let allSignatures = [];
+  const until = await getAsync(`solanaServerAddressUntilSignature:${address}`);
+  const limit = 1000;
+  var beforeSignature = null;
+  while (true) {
+    const options = {
+      limit,
+      before: beforeSignature,
+      until
+    };
+    const signatures = await connection.getSignaturesForAddress(address, options);
+    if (signatures.length === 0) {
+      break; // Exit loop when there are no more signatures to fetch
+    } else {
+      allSignatures = allSignatures.concat(signatures);
+      beforeSignature = signatures[signatures.length - 1].signature;
+      if (signatures.length < limit) break;
+    }
+    // Optional: Log progress
+    console.log(`Fetched ${signatures.length} signatures, total: ${allSignatures.length}`);
+  }
+  // return allSignatures.reverse();
+  return allSignatures.reverse();
+};
+
+const processAllTransactions = async (
+  connection, address, network, spl = false, symbol
+) => {
+  const validConfirmationStatus = ['confirmed', 'finalized'];
+  const publicKey = spl ? address : new PublicKey(address);
+  const signatures = await getAllSignatures(connection, publicKey);
+  if (signatures.length > 0) {
+    console.log("signature length: ", signatures.length, " network: ", network, " symbol: ", symbol);
+  }
+  for (const log of signatures) {
+    if (!validConfirmationStatus.includes(log.confirmationStatus)) continue;
+    const block = log.slot;
+    const transaction = await connection.getParsedTransaction(log.signature, { commitment: 'confirmed' });
+    await processTransactionV2(
+      connection,
+      transaction,
+      publicKey,
+      network,
+      symbol,
+      publicKey,
+      block // block
+    );
+  }
+}
+
+const processTransactionV2 = async (connection, transaction, monitoredAddress, network, symbol, targetAddressForUntilSignature, block) => {
+  try {
+    if (!transaction) return;
+    const message = transaction.transaction.message;
+    const programIds = message.instructions.map(instruction => (instruction.programId).toBase58());
+    const isSolTransaction = programIds.includes('11111111111111111111111111111111');
+    const isSplTransaction = programIds.includes(TOKEN_PROGRAM_ID.toBase58());
+
+    if (isSolTransaction) {
+      await handleTransaction(connection, transaction, monitoredAddress, symbol, network, targetAddressForUntilSignature, block);
+    }
+
+    if (isSplTransaction) {
+      await handleTransaction(connection, transaction, monitoredAddress, symbol, network, targetAddressForUntilSignature, block);
+    }
+  } catch (error) {
+    console.error(`Error processing transaction: ${error.message}`, error);
+  }
+};
+
 module.exports = {
+  processAllTransactions,
   createSolanaInstances,
   subscribeToTransactions,
   processTransaction,
-  findAssociatedTokenAddress
+  findAssociatedTokenAddress,
+  getAllSignatures
 };
