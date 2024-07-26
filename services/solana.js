@@ -24,7 +24,6 @@ const handleParsedTransaction = async (connection, txHash, network, parsed, moni
     let from = parsed.info.source;
     let to = parsed.info.destination;
     const amount = isSol ? parsed.info.lamports : (parsed.info?.tokenAmount?.amount || parsed.info?.amount);
-
     if (to === monitoredAddressStr) {
       from = isSol ? from : await getOwnerOfTokenAccount(connection, from);
       console.log("Deposit data: ", symbol, from, amount, txHash, network, targetAddressForUntilSignature);
@@ -45,11 +44,9 @@ const handleTransaction = async (connection, transaction, monitoredAddress, symb
     const monitoredAddressStr = monitoredAddress.toBase58();
     const txHash = transaction.transaction.signatures[0];
     const isSol = symbol === 'sol';
-
     for (const instruction of message.instructions) {
       const programId = instruction.programId.toBase58();
       const { parsed } = instruction;
-
       if ((isSol && programId === '11111111111111111111111111111111') ||
         (!isSol && programId === TOKEN_PROGRAM_ID.toBase58())) {
         await handleParsedTransaction(connection, txHash, network, parsed, monitoredAddressStr, isSol, symbol, targetAddressForUntilSignature, block);
@@ -201,14 +198,10 @@ const processTransactionV2 = async (connection, transaction, monitoredAddress, n
     const programIds = message.instructions.map(instruction => (instruction.programId).toBase58());
     const isSolTransaction = programIds.includes('11111111111111111111111111111111');
     const isSplTransaction = programIds.includes(TOKEN_PROGRAM_ID.toBase58());
-
-    if (isSolTransaction) {
+    if (isSolTransaction || isSplTransaction) {
       await handleTransaction(connection, transaction, monitoredAddress, symbol, network, targetAddressForUntilSignature, block);
     }
 
-    if (isSplTransaction) {
-      await handleTransaction(connection, transaction, monitoredAddress, symbol, network, targetAddressForUntilSignature, block);
-    }
   } catch (error) {
     console.error(`Error processing transaction: ${error.message}`, error);
   }

@@ -44,21 +44,15 @@ const { fetchSupportedTokens } = require('./utils/helpers');
           const { supportedTokens, isDocumentUpdated, isNativeTokenPresent } = await fetchSupportedTokens(`sol-${network}`);
           console.log("INITIALIZED");
           try {
-            if (isNativeTokenPresent) {
-              await processAllTransactions(solanaInstance, solanaServerAddress, `sol-${network}`, false, 'sol');
-            }
             for (const token of supportedTokens) {
               const { address, symbol, decimal, network, isNativeToken } = token;
               if (!isNativeToken) {
-                const serverAddress = await findAssociatedTokenAddress(solanaServerAddress, address);
                 // spl tokens
-                await processAllTransactions(
-                  solanaInstance,
-                  serverAddress,
-                  network,
-                  true,
-                  symbol,
-                )
+                const serverAddress = await findAssociatedTokenAddress(solanaServerAddress, address);
+                await processAllTransactions(solanaInstance, serverAddress, network, true, symbol);
+              } else {
+                // sol token
+                await processAllTransactions(solanaInstance, solanaServerAddress, `sol-${network}`, false, 'sol');
               }
             }
             console.log("END----");
@@ -73,9 +67,8 @@ const { fetchSupportedTokens } = require('./utils/helpers');
 
     // Run the task immediately once
     await runSolanaTasks();
-    // // Set interval to check for updates and re-run the task if needed 61 seconds
+    // Set interval to check for updates and re-run the task if needed 61 seconds
     setInterval(runSolanaTasks, 61 * 1000);
-
   } catch (error) {
     console.error("Error during initialization:", error.message);
   }
