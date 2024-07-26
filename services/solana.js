@@ -32,7 +32,7 @@ const handleParsedTransaction = async (connection, txHash, network, parsed, moni
     } else if (from === monitoredAddressStr) {
       to = isSol ? to : await getOwnerOfTokenAccount(connection, to);
       console.log("Withdraw data: ", symbol, to, amount, txHash, network, block, targetAddressForUntilSignature);
-      await withdrawTokens(symbol, to, amount, txHash, network);
+      await withdrawTokens(symbol, to, amount, txHash, network, block, targetAddressForUntilSignature)
     }
   } catch (error) {
     console.error(`Error handling parsed transaction: ${error.message}`, error);
