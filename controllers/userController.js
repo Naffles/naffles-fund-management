@@ -23,7 +23,9 @@ exports.depositTokens = async (coin, address, amount, txHash, network, blockNumb
     if (existingDeposit) {
       console.log("Transaction already exists in the database: ", txHash);
       // update untilSignature (txHash) if existing
-      await setAsync(`solanaServerAddressUntilSignature:${targetAddressForUntilSignature}`, txHash);
+      if (targetAddressForUntilSignature && txHash) {
+        await setAsync(`solanaServerAddressUntilSignature:${targetAddressForUntilSignature}`, txHash);
+      }
       await session.abortTransaction();
       return;
     }
@@ -51,7 +53,9 @@ exports.depositTokens = async (coin, address, amount, txHash, network, blockNumb
 
     console.log("Deposit successful");
     // update untilSignature (txHash) if all goes well
-    await setAsync(`solanaServerAddressUntilSignature:${targetAddressForUntilSignature}`, txHash);
+    if (targetAddressForUntilSignature && txHash) {
+      await setAsync(`solanaServerAddressUntilSignature:${targetAddressForUntilSignature}`, txHash);
+    }
 
     await session.commitTransaction();
   } catch (error) {
@@ -85,8 +89,10 @@ exports.withdrawTokens = async (coin, address, amount, txHash, network, blockNum
 
     if (!withdrawDocument) {
       console.log("No pending withdraw document found for: ", wallet.userRef);
-      // update untilSignature (txHash) if all goes well
-      await setAsync(`solanaServerAddressUntilSignature:${targetAddressForUntilSignature}`, txHash);
+      // update untilSignature (txHash) if existing
+      if (targetAddressForUntilSignature && txHash) {
+        await setAsync(`solanaServerAddressUntilSignature:${targetAddressForUntilSignature}`, txHash);
+      }
       await session.abortTransaction();
       return;
     }
@@ -104,9 +110,10 @@ exports.withdrawTokens = async (coin, address, amount, txHash, network, blockNum
     withdrawDocument.transactionHash = txHash;
     withdrawDocument.blockNumber = blockNumber;
     await withdrawDocument.save({ session });
-
     // update untilSignature (txHash) if all goes well
-    await setAsync(`solanaServerAddressUntilSignature:${targetAddressForUntilSignature}`, txHash);
+    if (targetAddressForUntilSignature && txHash) {
+      await setAsync(`solanaServerAddressUntilSignature:${targetAddressForUntilSignature}`, txHash);
+    }
     await session.commitTransaction();
     console.log("Withdraw successful");
   } catch (error) {
