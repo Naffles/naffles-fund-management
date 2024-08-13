@@ -33,6 +33,7 @@ const getLatestBlockNumber = async (network) => {
   return latestBlockNumberHex;
 };
 
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const getUserTransfers = async (alchemyInstance, addresses) => {
   const network = alchemyInstance.core.config.network;
   // find the minumum block number
@@ -46,7 +47,8 @@ const getUserTransfers = async (alchemyInstance, addresses) => {
         fromAddress: address,
         category: ["external", "erc20"],
       });
-
+      // Wait for 5 seconds before making the next API call
+      await sleep(5 * 1000);
       const toTransfers = await alchemyInstance.core.getAssetTransfers({
         fromBlock: blockNumber,
         toAddress: address,

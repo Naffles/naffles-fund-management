@@ -7,37 +7,47 @@ const { fetchSupportedTokens } = require('./utils/helpers');
 (async () => {
   try {
     await connectWithRetry(); // Wait for the MongoDB connection
-    // Function to be run every 30 seconds
+    // Function to be run every 60 seconds
+    let isEvmRunning = false;
     const runEvmTasks = async () => {
-      const evmNetworks = (EVM_NETWORKS || 'sepolia').split(',');
-      const evmServerAddress = (EVM_SERVER_ADDRESS || '0x829c609b5EED7A5D53C684B5f8b1d3aa6DE46145').split(',');
-      const alchemyInstances = createAlchemyInstances(evmNetworks);
-      for (const network of Object.keys(alchemyInstances)) {
-        const alchemyInstance = alchemyInstances[network];
-        // console.log(`Subscribing to ${network}`);
-        try {
-          await getUserTransfers(alchemyInstance, evmServerAddress);
-        } catch (error) {
-          console.error(`Error subscribing to ${network} mined transactions`, error.message);
+      if (isEvmRunning) {
+        console.log("runEvmTasks is already running, skipping this iteration.");
+        return;
+      }
+      isEvmRunning = true;
+      try {
+        const evmNetworks = (EVM_NETWORKS || 'sepolia').split(',');
+        const evmServerAddress = (EVM_SERVER_ADDRESS || '0x829c609b5EED7A5D53C684B5f8b1d3aa6DE46145').split(',');
+        const alchemyInstances = createAlchemyInstances(evmNetworks);
+        for (const network of Object.keys(alchemyInstances)) {
+          const alchemyInstance = alchemyInstances[network];
+          // console.log(`Subscribing to ${network}`);
+          try {
+            await getUserTransfers(alchemyInstance, evmServerAddress);
+          } catch (error) {
+            console.error(`Error subscribing to ${network} mined transactions`, error.message);
+          }
         }
+      } finally {
+        isEvmRunning = false;
       }
     };
     // Run the task immediately once
     await runEvmTasks();
-    // // Set interval to run the task every 30 seconds
-    setInterval(runEvmTasks, 30000);
+    // // Set interval to run the task every 60 seconds
+    setInterval(runEvmTasks, 60 * 1000);
 
     const solanaNetworks = (SOLANA_NETWORKS || 'devnet').split(',');
     const solanaServerAddress = SOLANA_SERVER_ADDRESS;
     const solanaInstances = createSolanaInstances(solanaNetworks);
-    let isRunning = false;
+    let isSolanaRunning = false;
 
     const runSolanaTasks = async () => {
-      if (isRunning) {
+      if (isSolanaRunning) {
         console.log("runSolanaTasks is already running, skipping this iteration.");
         return;
       }
-      isRunning = true;
+      isSolanaRunning = true;
       try {
         for (const network of Object.keys(solanaInstances)) {
           const solanaInstance = solanaInstances[network];
@@ -61,7 +71,7 @@ const { fetchSupportedTokens } = require('./utils/helpers');
           }
         }
       } finally {
-        isRunning = false;
+        isSolanaRunning = false;
       }
     };
 

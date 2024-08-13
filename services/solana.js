@@ -148,8 +148,8 @@ const getAllSignatures = async (connection, address) => {
   while (true) {
     const options = {
       limit,
-      before: beforeSignature,
-      until
+      ...(beforeSignature && { before: beforeSignature }),
+      ...(until && { until })
     };
     const signatures = await connection.getSignaturesForAddress(address, options);
     if (signatures.length === 0) {
