@@ -62,7 +62,7 @@ const { fetchSupportedTokens } = require('./utils/helpers');
                 await processAllTransactions(solanaInstance, serverAddress, network, true, symbol);
               } else {
                 // sol token
-                await processAllTransactions(solanaInstance, solanaServerAddress, `sol-${network}`, false, 'sol');
+                await processAllTransactions(solanaInstance, solanaServerAddress, network, false, 'sol');
               }
             }
             console.log("END----");
