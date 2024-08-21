@@ -1,8 +1,10 @@
 const { Connection, PublicKey } = require('@solana/web3.js');
 const solanaConfigs = require('../config/solanaConfig');
 const { depositTokens, withdrawTokens } = require('../controllers/userController');
-const { getAssociatedTokenAddress, ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, AccountLayout } = require('@solana/spl-token');
-const { getAsync } = require('../config/redisClient');
+const { getAssociatedTokenAddress, ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, AccountLayout, TOKEN_2022_PROGRAM_ID, getMint } = require('@solana/spl-token');
+const { getAsync, setAsync } = require('../config/redisClient');
+const Deposit = require('../models/transactions/deposit');
+const Withdraw = require('../models/transactions/withdraw');
 
 const createSolanaInstances = (networks) => {
   const instances = {};
@@ -48,7 +50,9 @@ const handleTransaction = async (connection, transaction, monitoredAddress, symb
       const programId = instruction.programId.toBase58();
       const { parsed } = instruction;
       if ((isSol && programId === '11111111111111111111111111111111') ||
-        (!isSol && programId === TOKEN_PROGRAM_ID.toBase58())) {
+        (!isSol && programId === TOKEN_PROGRAM_ID.toBase58()) ||
+        (!isSol && programId === TOKEN_2022_PROGRAM_ID.toBase58())
+      ) {
         await handleParsedTransaction(connection, txHash, network, parsed, monitoredAddressStr, isSol, symbol, targetAddressForUntilSignature, block);
       }
     }
@@ -57,73 +61,100 @@ const handleTransaction = async (connection, transaction, monitoredAddress, symb
   }
 };
 
-const processTransaction = async (connection, transaction, monitoredAddress, network, symbol, isNativeTokenPresent, nativeTokenSubscriptionId) => {
-  try {
-    if (!transaction) return;
-    const message = transaction.transaction.message;
-    const programIds = message.instructions.map(instruction => (instruction.programId).toBase58());
-    const isSolTransaction = programIds.includes('11111111111111111111111111111111');
-    const isSplTransaction = programIds.includes(TOKEN_PROGRAM_ID.toBase58());
+// const processTransaction = async (connection, transaction, monitoredAddress, network, symbol, isNativeTokenPresent, nativeTokenSubscriptionId) => {
+//   try {
+//     if (!transaction) return;
+//     const message = transaction.transaction.message;
+//     const programIds = message.instructions.map(instruction => (instruction.programId).toBase58());
+//     const isSolTransaction = programIds.includes('11111111111111111111111111111111');
+//     const isSplTransaction = programIds.includes(TOKEN_PROGRAM_ID.toBase58());
 
-    if (isSolTransaction) {
-      await handleTransaction(connection, transaction, monitoredAddress, symbol, network);
+//     if (isSolTransaction) {
+//       await handleTransaction(connection, transaction, monitoredAddress, symbol, network);
+//     }
+
+//     if (isSplTransaction) {
+//       if ((isNativeTokenPresent && nativeTokenSubscriptionId !== null) ||
+//         (!isNativeTokenPresent && nativeTokenSubscriptionId === null)) {
+//         await handleTransaction(connection, transaction, monitoredAddress, symbol, network);
+//       }
+//     }
+//   } catch (error) {
+//     console.error(`Error processing transaction: ${error.message}`, error);
+//   }
+// };
+
+// const subscribeToTransactions = (
+//   connection,
+//   address,
+//   network,
+//   spl = false,
+//   symbol,
+//   isNativeTokenPresent,
+//   nativeTokenSubscriptionId = null
+// ) => {
+//   try {
+//     const publicKey = spl ? address : new PublicKey(address);
+//     console.log(`Subscribing to transactions for publicKey: ${publicKey.toBase58()}`);
+//     const subscriptionId = connection.onLogs(publicKey, async (log) => {
+//       try {
+//         if (log.err === null) {
+//           const transaction = await connection.getParsedTransaction(log.signature, { commitment: 'confirmed' });
+//           await processTransaction(connection, transaction, publicKey, network, symbol, isNativeTokenPresent, nativeTokenSubscriptionId);
+//         }
+//       } catch (error) {
+//         console.error(`Error processing log entry for publicKey ${publicKey.toBase58()}: ${error.message}`, error);
+//       }
+//     }, 'confirmed');
+//     return subscriptionId;
+//   } catch (error) {
+//     console.error(`Error subscribing to transactions for address ${address.toString()}: ${error.message}`, error);
+//   }
+// };
+
+// const findAssociatedTokenAddress = async (walletAddress, tokenMintAddress) => {
+//   try {
+//     const associatedTokenAddress = await getAssociatedTokenAddress(
+//       new PublicKey(tokenMintAddress),
+//       new PublicKey(walletAddress),
+//       false, // allowOwnerOffCurve (set to false in most cases)
+//       TOKEN_PROGRAM_ID,
+//       ASSOCIATED_TOKEN_PROGRAM_ID
+//     );
+//     return associatedTokenAddress;
+//   } catch (error) {
+//     console.error(`Error finding associated token address for wallet ${walletAddress.toString()} and token mint ${tokenMintAddress.toString()}: ${error.message}`, error);
+//     throw error;
+//   }
+// };
+
+
+const findAssociatedTokenAddress = async (connection, walletAddress, tokenMintAddress) => {
+  try {
+    // Determine the program ID based on the token mint information
+    let programId = TOKEN_PROGRAM_ID;
+    try {
+      // First attempt with TOKEN_PROGRAM_ID
+      mintInfo = await getMint(connection, new PublicKey(tokenMintAddress), 'confirmed', TOKEN_PROGRAM_ID);
+    } catch (error) {
+      // console.error("Failed with TOKEN_PROGRAM_ID, switching to TOKEN_2022_PROGRAM_ID:", error.message);
+      programId = TOKEN_2022_PROGRAM_ID;
     }
 
-    if (isSplTransaction) {
-      if ((isNativeTokenPresent && nativeTokenSubscriptionId !== null) ||
-        (!isNativeTokenPresent && nativeTokenSubscriptionId === null)) {
-        await handleTransaction(connection, transaction, monitoredAddress, symbol, network);
-      }
-    }
-  } catch (error) {
-    console.error(`Error processing transaction: ${error.message}`, error);
-  }
-};
-
-const subscribeToTransactions = (
-  connection,
-  address,
-  network,
-  spl = false,
-  symbol,
-  isNativeTokenPresent,
-  nativeTokenSubscriptionId = null
-) => {
-  try {
-    const publicKey = spl ? address : new PublicKey(address);
-    console.log(`Subscribing to transactions for publicKey: ${publicKey.toBase58()}`);
-    const subscriptionId = connection.onLogs(publicKey, async (log) => {
-      try {
-        if (log.err === null) {
-          const transaction = await connection.getParsedTransaction(log.signature, { commitment: 'confirmed' });
-          await processTransaction(connection, transaction, publicKey, network, symbol, isNativeTokenPresent, nativeTokenSubscriptionId);
-        }
-      } catch (error) {
-        console.error(`Error processing log entry for publicKey ${publicKey.toBase58()}: ${error.message}`, error);
-      }
-    }, 'confirmed');
-    return subscriptionId;
-  } catch (error) {
-    console.error(`Error subscribing to transactions for address ${address.toString()}: ${error.message}`, error);
-  }
-};
-
-const findAssociatedTokenAddress = async (walletAddress, tokenMintAddress) => {
-  try {
-    const associatedTokenAddress = await getAssociatedTokenAddress(
+    // Now use the determined program ID to get the associated token address
+    const tokenAccount = await getAssociatedTokenAddress(
       new PublicKey(tokenMintAddress),
       new PublicKey(walletAddress),
       false, // allowOwnerOffCurve (set to false in most cases)
-      TOKEN_PROGRAM_ID,
+      programId,
       ASSOCIATED_TOKEN_PROGRAM_ID
     );
-    return associatedTokenAddress;
+    return { tokenAccount, programId };
   } catch (error) {
     console.error(`Error finding associated token address for wallet ${walletAddress.toString()} and token mint ${tokenMintAddress.toString()}: ${error.message}`, error);
     throw error;
   }
 };
-
 
 const getOwnerOfTokenAccount = async (connection, tokenAccountAddress) => {
   try {
@@ -172,6 +203,13 @@ const processAllTransactions = async (
   const validConfirmationStatus = ['confirmed', 'finalized'];
   const publicKey = spl ? address : new PublicKey(address);
   const signatures = await getAllSignatures(connection, publicKey);
+
+  // // ++++++++++++ for testing only +++++++++++
+  // const signature = signatures[signatures.length - 1];
+  // const transaction = await connection.getParsedTransaction(signature.signature, { commitment: 'confirmed' });
+  // await setAsync(`solanaServerAddressUntilSignature:${publicKey}`, transaction.transaction.signatures[0]);
+  // // +++++++++++++++++++++++++++++++++++++++++
+
   if (signatures.length > 0) {
     console.log("signature length: ", signatures.length, " network: ", network, " symbol: ", symbol);
   }
@@ -198,7 +236,8 @@ const processTransactionV2 = async (connection, transaction, monitoredAddress, n
     const programIds = message.instructions.map(instruction => (instruction.programId).toBase58());
     const isSolTransaction = programIds.includes('11111111111111111111111111111111');
     const isSplTransaction = programIds.includes(TOKEN_PROGRAM_ID.toBase58());
-    if (isSolTransaction || isSplTransaction) {
+    const isSpl2022Transaction = programIds.includes(TOKEN_2022_PROGRAM_ID.toBase58());
+    if (isSolTransaction || isSplTransaction || isSpl2022Transaction) {
       await handleTransaction(connection, transaction, monitoredAddress, symbol, network, targetAddressForUntilSignature, block);
     }
 
@@ -210,8 +249,8 @@ const processTransactionV2 = async (connection, transaction, monitoredAddress, n
 module.exports = {
   processAllTransactions,
   createSolanaInstances,
-  subscribeToTransactions,
-  processTransaction,
+  // subscribeToTransactions,
+  // processTransaction,
   findAssociatedTokenAddress,
   getAllSignatures
 };
