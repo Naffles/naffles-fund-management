@@ -3,6 +3,7 @@ const { createAlchemyInstances, getUserTransfers } = require('./services/alchemy
 const { createSolanaInstances, findAssociatedTokenAddress, processAllTransactions } = require('./services/solana');
 const connectWithRetry = require("./config/database");
 const { fetchSupportedTokens } = require('./utils/helpers');
+const { PublicKey } = require('@solana/web3.js');
 
 (async () => {
   try {
@@ -58,11 +59,11 @@ const { fetchSupportedTokens } = require('./utils/helpers');
               const { address, symbol, decimal, network, isNativeToken } = token;
               if (!isNativeToken) {
                 // spl tokens
-                const serverAddress = await findAssociatedTokenAddress(solanaServerAddress, address);
-                await processAllTransactions(solanaInstance, serverAddress, network, true, symbol);
+                const { tokenAccount, programId } = await findAssociatedTokenAddress(solanaInstance, new PublicKey(solanaServerAddress), address);
+                await processAllTransactions(solanaInstance, tokenAccount, network, true, symbol);
               } else {
                 // sol token
-                await processAllTransactions(solanaInstance, solanaServerAddress, `sol-${network}`, false, 'sol');
+                await processAllTransactions(solanaInstance, solanaServerAddress, network, false, 'sol');
               }
             }
             console.log("END----");
@@ -77,7 +78,7 @@ const { fetchSupportedTokens } = require('./utils/helpers');
 
     // Run the task immediately once
     await runSolanaTasks();
-    // Set interval to check for updates and re-run the task if needed 61 seconds
+    // // Set interval to check for updates and re-run the task if needed 61 seconds
     setInterval(runSolanaTasks, 61 * 1000);
   } catch (error) {
     console.error("Error during initialization:", error.message);
