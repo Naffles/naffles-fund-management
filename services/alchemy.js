@@ -87,7 +87,10 @@ const getUserTransfers = async (alchemyInstance, addresses) => {
 
 const handleExternalTransfer = async (actionType, asset, from, to, value, txHash, network, blockNumDecimal) => {
   try {
-    const coinType = asset.toLowerCase();
+    var coinType = asset.toLowerCase();
+    if (network !== "eth-mainnet" && network !== "eth-sepolia") {
+      coinType = `${network[0]?.toLowerCase()}eth`;
+    }
     if (actionType === 'deposit') {
       // console.log("eth deposited: ", coinType, from, value, txHash, network, blockNumDecimal);
       await depositTokens(coinType, from, value, txHash, network, blockNumDecimal);
