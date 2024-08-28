@@ -11,7 +11,7 @@ const alchemyConfigs = {
     apiKey: process.env.ALCHEMY_API_KEY_SEPOLIA,
     network: Network.ETH_SEPOLIA,
   },
-  base: {
+  "base-mainnet": {
     apiKey: process.env.ALCHEMY_API_KEY_ETH_MAINNET,
     network: Network.BASE_MAINNET,
   },
