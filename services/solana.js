@@ -216,7 +216,10 @@ const processAllTransactions = async (
   for (const log of signatures) {
     if (!validConfirmationStatus.includes(log.confirmationStatus)) continue;
     const block = log.slot;
-    const transaction = await connection.getParsedTransaction(log.signature, { commitment: 'confirmed' });
+    const transaction = await connection.getParsedTransaction(log.signature, {
+      commitment: 'confirmed',
+      maxSupportedTransactionVersion: 0,
+    });
     await processTransactionV2(
       connection,
       transaction,
